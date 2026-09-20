@@ -24,6 +24,54 @@
 
 ---
 
+## 📋 The problem
+
+> **PS 26161 — "Dam Break Inundation Modelling Using Hydrodynamic Modelling of any River."**
+
+When a large dam fails, the reservoir does not drain — it collapses. Tehri holds
+3,540 million cubic metres behind a 260 m head. A breach releases that into a
+Himalayan gorge, and the wave reaches the first town in **minutes**, not hours.
+Downstream lie Devprayag, Rishikesh and Haridwar.
+
+Answering *"what happens, where, and how long do people have"* requires four
+things that rarely exist together:
+
+| The gap | Why it matters |
+| :-- | :-- |
+| 🏔️ **Real terrain, not a textbook channel** | Flood extent is set by the valley's shape. A 1D channel model cannot tell you which neighbourhood floods. |
+| ⚙️ **A solver that is actually correct** | A 2D shallow-water code that is not well-balanced invents metres-per-second currents on a still lake. The map still looks plausible. |
+| 🔁 **Generality, not one tuned valley** | A model that works only for the dam it was built for is a case study, not a tool. |
+| 👥 **Consequences, not just water** | "Peak depth 12 m" is not actionable. "1,840 buildings, 2 hospitals, 47 minutes of warning" is. |
+
+FloodGuard India is built to close all four — and to **refuse to answer** when it
+cannot, rather than guessing.
+
+---
+
+## 🎯 What we set out to build
+
+The problem statement asks for seven deliverables. Here is each one, and where
+it honestly stands today.
+
+| # | Deliverable | Status |
+| :--: | :-- | :-- |
+| 1 | Generalized framework simulating dam break / river blockage from real DEM + hydrological data | ✅ **Done** |
+| 2 | **Two independent hydrodynamic engines** with a quantitative comparison | 🟡 **One engine verified.** Second in progress — see [Roadmap](#-roadmap) |
+| 3 | Inundation scenarios from swappable input datasets — any river, any dam | ✅ **Done** — adding a dam is a YAML file |
+| 4 | Web dashboard for input and output, handling large rasters | ✅ **Done** — React + MapLibre |
+| 5 | Exports to `.shp`, `.kml`, `.geojson`, `.tif` + PDF report | ✅ **Done** — plus COG and KMZ |
+| 6 | Near-real-time flood mapping via Google Earth Engine + Sentinel-1 | 🟡 **Built, never executed** — needs credentials |
+| 7 | HADR loss-and-damage analysis inside the inundation polygon | 🟡 **Built, awaiting exposure layers** |
+
+> **Why the honest status column?** Because rule #1 of this project is that
+> nothing claims to be more finished than it is — including this README. A
+> deliverable marked 🟡 is one whose code you can inspect today; it is not
+> vapour, and it is not pretending to be complete.
+
+---
+
+---
+
 ## What makes this different
 
 Most dam-break demos show a map. The three things that matter here are what
