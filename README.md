@@ -219,75 +219,69 @@ is dangerous.
 
 ---
 
-## Quickstart
+## 🚀 Quickstart
 
 ```bash
+git clone https://github.com/kalpitphogat/Sih.git && cd Sih
+
 pip install -r requirements.txt && pip install -e backend
 cd frontend && npm install && cd ..
-
-make validate                                       # 7/7 in under a minute
-make data      SCENARIO=tehri_bhagirathi            # fetch real Copernicus DEM
-make simulate  SCENARIO=tehri_bhagirathi            # headless end-to-end
-make serve-backend & make serve-frontend            # http://localhost:5173
 ```
 
-Check what this machine can actually run:
+Verify the install **in this order**:
 
 ```bash
-python -m floodguard.cli engines
+python -m floodguard.cli engines      # honest engine availability table
+python -m pytest backend/tests -q     # 115 passed
+python -m floodguard.cli validate     # 7/7 in under a minute
+python -m floodguard.cli demo --check # 6-item preflight
+```
+
+Then run something real:
+
+```bash
+make data      SCENARIO=tehri_bhagirathi    # fetch real Copernicus DEM
+make simulate  SCENARIO=tehri_bhagirathi    # headless end-to-end
+make serve-backend & make serve-frontend    # -> http://localhost:5173
 ```
 
 <details>
-<summary>conda path, if you want ANUGA</summary>
+<summary><b>conda path, if you want ANUGA as the cross-check engine</b></summary>
 
 ```bash
 conda env create -f environment.yml
 conda activate floodguard
 pip install -e backend
+conda install -c conda-forge anuga
 ```
 
 ANUGA ships on conda-forge only. Without it, the independent cross-check engine
-is reported unavailable rather than silently skipped.
+is reported **unavailable** rather than silently skipped, and the comparison
+table says so instead of showing placeholder numbers.
+
+</details>
+
+<details>
+<summary><b>Rebuilding data on a fresh clone</b></summary>
+
+`data/raw/`, `data/processed/`, `data/runs/` and `reference/` are gitignored, so
+a fresh clone has no DEM and no completed runs.
+
+```bash
+python scripts/clone_references.py     # 8 reference repos — docs/AUDIT.md context
+python scripts/build_dam_catalog.py    # rebuilds data/catalog/dams.geojson
+```
+
+`build_dam_catalog.py` reads from `reference/hydrobreach/`, so clone the
+references **first**.
+
+Optional credentials, both absent on the development machine:
+`OPENTOPO_API_KEY` (DEM fallback only — the keyless AWS path works) and
+`GOOGLE_APPLICATION_CREDENTIALS` (required for Phase 8 to do anything real).
+
 </details>
 
 ---
-
-## Architecture
-
-```
-                 CWC NRLD          Copernicus GLO-30        OSM / WorldPop
-                (30 dams,           (AWS, keyless,           (Overpass,
-              cited per field)      SHA256-cached)            cached)
-                     |                     |                      |
-                     v                     v                      v
-             +-------------------------------------------------------+
-   Phase 1-2 |  scenario YAML  ->  DEM conditioning, corridor trace,  |
-             |                     reservoir curve + bathymetry       |
-             +-------------------------------------------------------+
-                                        |
-             +-------------------------------------------------------+
-   Phase 3   |  Froehlich / Von Thun / MacDonald  ->  level-pool      |
-             |  routing  ->  breach hydrograph Q(t)                   |
-             +-------------------------------------------------------+
-                                        |
-             +-------------------------------------------------------+
-   Phase 4   |              Engine interface (one contract)           |
-             |  FloodGuard-SWE | ANUGA | Delft3D FM | PySPH | DualSPH |
-             |  MUSCL-HLLC, well-balanced, numba-jitted               |
-             +-------------------------------------------------------+
-                                        |
-             +-------------------------------------------------------+
-   Phase 5-6 |  depth / velocity / arrival rasters  ->  hazard bands  |
-             |  ->  COG, SHP, KML, GeoJSON, CSV  ->  HADR exposure    |
-             +-------------------------------------------------------+
-                                        |
-             +---------------------------+---------------------------+
-   Phase 7-10|  FastAPI + WebSocket  ->  React dashboard  ->  PDF     |
-             +-------------------------------------------------------+
-```
-
-Every stage writes provenance: DEM source and resolution, dam parameters and
-their citations, engine and version, solver settings, git commit, UTC timestamp.
 
 ---
 
