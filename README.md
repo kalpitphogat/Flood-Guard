@@ -332,31 +332,50 @@ reconstructed bed **577 m vs crest-minus-height 579 m**.
 
 ---
 
+## 🗂️ Repository layout
+
+```
+backend/app/              FastAPI: routes, config, provenance, job store, schemas
+  schemas/models.py       <- THE API CONTRACT
+backend/floodguard/       the science package - importable and CLI-usable
+  scenario.py             <- start here to understand the data model
+  pipeline.py             <- end-to-end orchestration; engine substitution decided here
+  data/                   fetchers: DEM, dams, OSM, population, GEE
+  preprocess/             conditioning, corridor, reservoir, cross-sections
+  breach/                 parameter models, outflow, level-pool routing
+  engines/                Engine interface + 5 backends, numba kernels
+  postprocess/            hazard classification, GIS exports
+  impact/                 HADR exposure
+  compare/                cross-engine metrics
+  validation/             analytical solutions + the verification runner
+backend/tests/            7 files, 115 tests
+frontend/src/
+  components/Value.tsx    <- the "not computed" rule lives here
+  pages/                  Home, Simulation, RealtimeMonitoring, About
+data/scenarios/           tehri_bhagirathi.yaml, hirakud_mahanadi.yaml
+data/catalog/             dams.geojson - 30 dams, per-field citations
+docs/                     AUDIT, METHODOLOGY, DATA_SOURCES, DEMO_SCRIPT, validation/
+```
+
 ---
 
-## Repository layout
+## 🛠️ CLI reference
 
-```
-backend/app/          FastAPI: routes, config, provenance, job store, schemas
-backend/floodguard/   the science package — importable and CLI-usable
-  data/               fetchers: DEM, dams, OSM, population, GEE
-  preprocess/         conditioning, corridor, reservoir, cross-sections
-  breach/             parameter models, outflow, level-pool routing
-  engines/            Engine interface + 5 backends, numba kernels
-  postprocess/        hazard classification, GIS exports
-  impact/             HADR exposure
-  compare/            cross-engine metrics
-  validation/         analytical solutions + the verification runner
-frontend/src/         React 18 + TypeScript + MapLibre + Recharts
-data/scenarios/       YAML scenario definitions
-data/catalog/         dams.geojson with per-field citations
-docs/                 AUDIT, METHODOLOGY, DATA_SOURCES, DEMO_SCRIPT, validation/
+```bash
+floodguard engines                                  # honest availability table
+floodguard data       --scenario <yaml> [--resolution M] [--skip-osm --skip-population]
+floodguard verify                                   # re-hash every cached input
+floodguard preprocess --scenario <yaml> [--resolution M]
+floodguard breach     --scenario <yaml>             # or --validate for Teton/Banqiao
+floodguard simulate   --scenario <yaml> [--resolution M] [--duration H] [--engines a,b]
+floodguard impact     [--run <id>]
+floodguard report     [--run <id>]                  # PDF
+floodguard validate   [--quick]                     # THE GATE - 7/7 required
+floodguard demo       [--check]
 ```
 
-## Make targets
-
-| Target | What it does |
-| --- | --- |
+| Make target | What it does |
+| :-- | :-- |
 | `make setup` | Install backend and frontend dependencies |
 | `make data` | Fetch and cache every input layer, checksummed |
 | `make preprocess` | DEM conditioning, corridor, reservoir curve |
@@ -364,8 +383,15 @@ docs/                 AUDIT, METHODOLOGY, DATA_SOURCES, DEMO_SCRIPT, validation/
 | `make simulate` | Headless end-to-end run |
 | `make test` | 115 tests |
 
-Targets for unimplemented phases exit non-zero with a message naming the phase.
-They never print a fabricated result.
+Targets for unimplemented phases **exit non-zero with a message naming the
+phase**. They never print a fabricated result.
+
+> ⚡ **Resolution is the biggest lever** on both runtime and the answer. Cost
+> scales as ~1/res³ and peak depths are genuinely resolution-sensitive. 30 m is
+> the publication setting; 90–120 m is interactive. Every output records which
+> one it used.
+
+---
 
 ---
 
