@@ -70,6 +70,91 @@ it honestly stands today.
 
 ---
 
+## 🗺️ How it works — the full pipeline
+
+```mermaid
+flowchart TB
+    subgraph IN["📥 PHASE 1 · INPUTS — real, checksummed, cached"]
+        direction LR
+        DEM["<b>Copernicus GLO-30</b><br/>AWS · keyless · SHA256"]
+        NRLD["<b>CWC NRLD-2019</b><br/>30 dams · cited per field"]
+        EXP["<b>OSM + WorldPop</b><br/>buildings · roads · people"]
+        SAT["<b>Sentinel-1 GRD</b><br/>via Earth Engine"]
+    end
+
+    YAML["⚙️ <b>Scenario YAML</b><br/>dam · river · breach · resolution · duration<br/><i>adding a dam changes no code</i>"]
+
+    subgraph PRE["🏔️ PHASE 2 · TERRAIN CONDITIONING"]
+        direction LR
+        HYD["Priority-flood fill<br/>D8 · accumulation<br/>watershed · corridor mask"]
+        RES["Reservoir delineation<br/>elevation–area–capacity<br/>bathymetry reconstruction"]
+        SEC["Cross-sections<br/>at towns + 10 km<br/>Manning n field"]
+    end
+
+    subgraph BR["💥 PHASE 3 · BREACH + RESERVOIR ROUTING"]
+        direction LR
+        PAR["<b>3 breach models</b><br/>Froehlich 2008<br/>Von Thun and Gillette 1990<br/>MacDonald and L-M 1984"]
+        OUT["Weir + orifice outflow<br/>Villemonte submergence<br/>level-pool · adaptive RK2"]
+    end
+
+    HYDRO["📈 <b>Breach hydrograph Q(t)</b><br/>mass closure 0.0000%<br/><i>validated vs Teton 1976 and Banqiao 1975</i>"]
+
+    subgraph ENG["🌊 PHASE 4 · HYDRODYNAMIC ENGINES — one contract"]
+        direction LR
+        SWE["<b>FloodGuard-SWE</b> ✅<br/>Godunov FV · MUSCL-minmod<br/>HLLC · Audusse well-balanced<br/>numba-jitted<br/><b>verified 7/7</b>"]
+        ALT["<b>Cross-check engine</b> 🟡<br/>ANUGA / PySPH<br/><i>populates the<br/>comparison table</i>"]
+        ADP["<b>Adapters</b> 📦<br/>Delft3D FM deck<br/>DualSPHysics CaseDef<br/><i>run if binaries exist</i>"]
+    end
+
+    subgraph POST["🎨 PHASE 5 · RASTERS, HAZARD, EXPORTS"]
+        direction LR
+        RAS["max depth · max velocity<br/>arrival time · D×V hazard"]
+        HAZ["AIDR Handbook 7 §6.1<br/>hazard classification"]
+        EXPT["COG · SHP · GeoJSON<br/>KML / KMZ · CSV"]
+    end
+
+    IMP["👥 <b>PHASE 6 · HADR IMPACT</b><br/>population · buildings · roads · hospitals<br/>schools · bridges · evacuation priority by lead time"]
+
+    GEE["🛰️ <b>PHASE 8 · NEAR-REAL-TIME</b><br/>Sentinel-1 change detection · refined Lee<br/>per-scene Otsu · JRC water excluded<br/>CSI / POD / FAR vs simulation"]
+
+    subgraph DEL["🖥️ PHASE 7 · 9 · 10 · DELIVERY"]
+        direction LR
+        API["<b>FastAPI</b><br/>SQLite job store<br/>WebSocket progress"]
+        UI["<b>React + MapLibre</b><br/>3-column simulation page<br/>hydrographs · sections"]
+        PDF["<b>PDF report</b><br/>git hash on every page<br/>caveats in the body"]
+    end
+
+    PROV["🔒 <b>PROVENANCE ON EVERY OUTPUT</b><br/>DEM source · dam parameters + citations · engine + version<br/>solver settings · git commit · UTC timestamp"]
+
+    DEM --> YAML
+    NRLD --> YAML
+    EXP -.-> IMP
+    SAT -.-> GEE
+    YAML --> PRE
+    PRE --> BR
+    BR --> HYDRO
+    HYDRO --> ENG
+    ENG --> POST
+    POST --> IMP
+    POST --> DEL
+    IMP --> DEL
+    GEE --> DEL
+    POST -.->|"CSI / POD / FAR"| GEE
+    DEL --> PROV
+
+    classDef keyNode fill:#EAF3FB,stroke:#2C6FAF,stroke-width:2px,color:#0B2A45
+    classDef pending fill:#FFF6E0,stroke:#D68A00,stroke-width:2px,color:#0B2A45
+    classDef rule fill:#F3EDFB,stroke:#7B4FC0,stroke-width:2px,color:#0B2A45
+
+    class YAML,HYDRO keyNode
+    class IMP,GEE pending
+    class PROV rule
+```
+
+**Read it as a contract.** Each stage consumes files and emits files, and every
+emitted file records what produced it. There is no step at which a number is
+introduced by hand.
+
 ---
 
 ## What makes this different
