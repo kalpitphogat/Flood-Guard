@@ -1,12 +1,26 @@
-# FloodGuard India
+<div align="center">
 
-**Dam-break and flash-flood inundation modelling for any Indian river.**
-Smart India Hackathon — Problem Statement **26161**.
+# 🌊 FloodGuard India
 
-Simulates a dam break or river blockage from real terrain and hydrological
-data, routes the flood wave downstream with a verified two-dimensional
-shallow-water solver, and reports what lies inside the inundated area — with
-every number traceable to the file it came from.
+### Dam-break and flash-flood inundation modelling for any Indian river
+
+**Smart India Hackathon — Problem Statement 26161**
+
+[![SIH](https://img.shields.io/badge/SIH-PS%2026161-FF6B35?style=for-the-badge)](SPEC.md)
+[![Verification](https://img.shields.io/badge/solver%20verification-7%2F7%20passing-2EA043?style=for-the-badge)](docs/validation/summary.md)
+[![Tests](https://img.shields.io/badge/tests-115%20passing-2EA043?style=for-the-badge)](backend/tests)
+
+![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
+![MapLibre](https://img.shields.io/badge/MapLibre_GL-396CB2?logo=maplibre&logoColor=white)
+![Numba](https://img.shields.io/badge/Numba_JIT-00A3E0)
+
+*Simulate a dam break from real terrain. Route the wave with a verified solver.*
+*Count who is in its path. Trace every number back to the file it came from.*
+
+</div>
 
 ---
 
