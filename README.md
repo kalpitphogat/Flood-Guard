@@ -283,49 +283,54 @@ Optional credentials, both absent on the development machine:
 
 ---
 
----
-
-## What is real, and what is a documented substitute
+## 🔍 What is real, and what is a documented substitute
 
 | Component | Status on a clean machine |
-| --- | --- |
-| **FloodGuard-SWE** 2D solver | **Real.** Verified 7/7. This is what powers the demo |
-| Breach models | **Real.** Froehlich, Von Thun & Gillette, MacDonald — all three run |
-| DEM acquisition | **Real.** Copernicus GLO-30 from AWS, checksummed |
-| Dam catalog | **Real.** 30 dams, CWC NRLD-2019, cited per field |
-| GIS exports | **Real.** COG, zipped SHP, GeoJSON, KML, KMZ, CSV |
-| PDF report | **Real.** 6 pages with provenance on every page |
-| **Delft3D FM** | Deck **generated**; solver runs only if `dflowfm` is on PATH |
-| **DualSPHysics** | `CaseDef.xml` **generated**; solver needs GenCase + DualSPHysics |
-| **ANUGA** | conda-forge only; reported unavailable otherwise |
-| **PySPH** | Needs a C compiler; case definition present, reports unavailable |
-| **GEE monitoring** | Inert without `GOOGLE_APPLICATION_CREDENTIALS`; says so |
-| Exposure analysis | Real, but reports "not computed" unless OSM/WorldPop were fetched |
-| 3D view | **Not built.** The tab says so rather than showing a placeholder |
+| :-- | :-- |
+| 🟢 **FloodGuard-SWE** 2D solver | **Real.** Verified 7/7. This is what powers the demo |
+| 🟢 Breach models | **Real.** Froehlich, Von Thun & Gillette, MacDonald — all three run, spread reported |
+| 🟢 DEM acquisition | **Real.** Copernicus GLO-30 from AWS, SHA256-checksummed |
+| 🟢 Dam catalog | **Real.** 30 dams, CWC NRLD-2019, cited per field to PDF page and PIC code |
+| 🟢 GIS exports | **Real.** COG, zipped SHP, GeoJSON, KML, KMZ, CSV |
+| 🟢 PDF report | **Real.** 6 pages, provenance on every page |
+| 📦 **Delft3D FM** | Deck **generated**; solver runs only if `dflowfm` is on PATH |
+| 📦 **DualSPHysics** | `CaseDef.xml` **generated**; needs GenCase + DualSPHysics binaries |
+| 🟡 **ANUGA** | conda-forge only; reported unavailable otherwise |
+| 🟡 **PySPH** | Needs a C compiler; case definition present and reviewable |
+| 🟡 **GEE monitoring** | Returns 503 with a named reason without `GOOGLE_APPLICATION_CREDENTIALS` |
+| 🟡 Exposure analysis | Real code; reports "not computed" unless OSM/WorldPop were fetched |
+| ⬜ 3D view | **Not built.** The tab says so rather than showing a placeholder |
 
-The Delft3D deck is a deliverable in its own right: a complete UGRID `_net.nc`,
-`.mdu`, boundary `.pli` and `.bc` carrying the breach hydrograph, and a DIMR
-config, generated from a DEM and a dam record. It runs the moment you point it
-at a licensed solver.
+> The Delft3D deck is a deliverable in its own right: a complete UGRID `_net.nc`,
+> `.mdu`, boundary `.pli` and `.bc` carrying the breach hydrograph, and a DIMR
+> config — generated from a DEM and a dam record. It runs the moment you point it
+> at a licensed solver.
 
 ---
 
-## Demo scenarios
+## 🏞️ Demo scenarios — generality, proven
 
 Deliberately opposite regimes, to show the framework is general rather than
-tuned to one valley. Adding a dam is a YAML file, not a code change.
+tuned to one valley. **Same code. Different YAML.**
 
-| | Tehri | Hirakud |
-| --- | --- | --- |
-| River | Bhagirathi → Ganga | Mahanadi |
-| Head | 260 m | 61 m |
-| Storage | 3,540 MCM | 8,136 MCM |
-| Terrain | Himalayan gorge | deltaic plain |
-| Wave | deep, fast, minutes of warning | wide, slow, hours of warning |
+| | 🏔️ Tehri | 🌾 Hirakud |
+| :-- | :-- | :-- |
+| **River** | Bhagirathi → Ganga | Mahanadi |
+| **Head** | 260 m | 61 m |
+| **Storage** | 3,540 MCM | 8,136 MCM |
+| **Terrain** | Himalayan gorge | Deltaic plain |
+| **Wave** | Deep, fast — **minutes** of warning | Wide, slow — **hours** of warning |
+| **What it tests** | Vertical accuracy, shock capture | Inundation area, lateral spreading |
 
-Tehri is on the **Bhagirathi**, not the Alaknanda. Those two meet at
-**Devprayag** to form the Ganga, which then flows through Rishikesh and
-Haridwar.
+**Reservoir delineation, validated against published figures:** Tehri pool area
+**42.82 km² derived vs ~42 km² published**; storage **−0.5% vs NRLD**;
+reconstructed bed **577 m vs crest-minus-height 579 m**.
+
+> Tehri is on the **Bhagirathi**, not the Alaknanda. Those two meet at
+> **Devprayag** to form the Ganga, which then flows through Rishikesh and
+> Haridwar. Getting this wrong sends the flood down the wrong valley.
+
+---
 
 ---
 
