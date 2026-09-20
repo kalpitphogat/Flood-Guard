@@ -393,30 +393,73 @@ phase**. They never print a fabricated result.
 
 ---
 
+## 🧭 Roadmap
+
+What is left, in the order it should be done.
+
+**P0 — the visible gaps**
+
+- [ ] **Second engine** → populates the comparison table (deliverable #2). ANUGA via conda-forge is the cheaper win and gives an *independent published solver* as the cross-check.
+- [ ] **Run the exposure layers** — one command turns six "not computed" cards into real numbers.
+- [ ] **One 30 m publication run.** Both existing runs are 90 m / 120 m and short.
+
+**P1 — spec features not yet built**
+
+- [ ] `POST /api/results/{id}/share` → short link
+- [ ] Upload endpoints (DEM GeoTIFF / hydrograph CSV / AOI) with CRS + extent validation
+- [ ] "Upload Custom Data" panel · "Demo Mode" toggle
+- [ ] Comparison **swipe map** (table only today)
+- [ ] **3D view** — deck.gl TerrainLayer + water surface
+- [ ] Time-indexed tiles so the raster animates
+
+**P2 — quality**
+
+- [ ] Frontend tests (Vitest) — at minimum, assert a `null` KPI renders `—` and never `0`
+- [ ] ESA WorldCover → spatially varying Manning n + agricultural-area metric
+- [ ] Test `docker-compose.yml` (written, never executed)
+- [ ] Add Idukki to the dam catalog (known gap, recorded in catalog metadata)
+- [ ] Malpasset 1959 benchmark
+
 ---
 
-## Documentation
+## 📚 Documentation
 
-- **[`docs/METHODOLOGY.md`](docs/METHODOLOGY.md)** — equations, schemes,
-  assumptions, verification results, and eight stated limitations.
-- **[`docs/AUDIT.md`](docs/AUDIT.md)** — what we found in every reference
-  repository, file by file, including two that were not what they claimed.
-- **[`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md)** — every dataset, URL,
-  licence, and what each one *cannot* tell you.
-- **[`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md)** — five-minute walkthrough
-  and the three questions judges ask.
-- **[`docs/validation/summary.md`](docs/validation/summary.md)** — the
-  verification report with plots.
+| Document | What's in it |
+| :-- | :-- |
+| **[`SPEC.md`](SPEC.md)** | The contract. §1 is the non-negotiable engineering rules |
+| **[`docs/METHODOLOGY.md`](docs/METHODOLOGY.md)** | Equations, schemes, assumptions, verification, **eight stated limitations** |
+| **[`docs/AUDIT.md`](docs/AUDIT.md)** | What we found in every reference repo, file by file — including two that were not what they claimed |
+| **[`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md)** | Every dataset, URL, licence, and what each one **cannot** tell you |
+| **[`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md)** | Five-minute walkthrough + the three questions judges ask |
+| **[`docs/validation/summary.md`](docs/validation/summary.md)** | The verification report, with plots |
 
 ---
 
-## Licence and attribution
+## ⚖️ Licence and attribution
 
-Input dataset licences are in `docs/DATA_SOURCES.md` and in `data/MANIFEST.json`
-(URL, SHA256, size, licence and fetch time per file).
+Input dataset licences are in [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) and
+in `data/MANIFEST.json` — URL, SHA256, size, licence and fetch time per file.
 
-Third-party solvers are used within their licences: **DualSPHysics (LGPL-2.1)**
+Third-party solvers are used within their licences. **DualSPHysics (LGPL-2.1)**
 and **Delft3D (AGPL/GPL/LGPL/BSD)** are invoked as external processes or read
-only for their file formats — no source from either is copied into this
-repository. **ANUGA (Apache-2.0)** and **PySPH (BSD/MIT)** are installed
+only for their file formats — **no source from either is copied into this
+repository**. **ANUGA (Apache-2.0)** and **PySPH (BSD/MIT)** are installed
 dependencies.
+
+---
+
+<div align="center">
+
+### The thesis
+
+**This codebase refuses to fake things.**
+
+When it cannot compute something, it surfaces that: `None`, an em dash, a named
+reason, a raised `EngineUnavailable`. Never a plausible default. Never a zero.
+Never a label for something that did not run.
+
+*A smaller system that is provably correct beats a larger one that is partly
+theatre — because the second kind loses the moment someone clicks past the
+demo script.*
+
+</div>
