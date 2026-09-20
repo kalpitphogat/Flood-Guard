@@ -157,40 +157,65 @@ introduced by hand.
 
 ---
 
-## What makes this different
+## ⭐ What makes this different
 
-Most dam-break demos show a map. The three things that matter here are what
-sits behind it.
+Most dam-break demos show a map. The three things that matter here sit behind it.
 
-**1. The solver is verified against exact analytical solutions.**
+### 1️⃣ The solver is verified against exact analytical solutions
 
-| Check | Result |
-| --- | --- |
-| Ritter (1892) dry-bed dam break | relative L2 **0.305%**, h(dam) error **0.94%** |
-| Stoker (1957) wet-bed dam break | relative L2 **0.725%**, shock within **0.4 cells** |
-| Lake at rest over irregular bed | spurious discharge **3.9e-12**, drift **1.4e-14 m** |
-| Mass conservation, fully wet | relative error **5.2e-16** |
-| Wet/dry mass budget | **0.002%** loss |
-| Grid convergence (Ritter) | observed order **0.91** |
-| Frictional dam break | front retarded, never outruns Ritter |
+Verification asks whether the code solves the equations it *claims* to solve.
+These are closed-form solutions and exact invariants, so the comparison is not a
+matter of opinion.
 
-`make validate` reproduces all seven in under a minute. Plots and error tables
-are in [`docs/validation/`](docs/validation/).
+| Check | Result | Criterion |
+| :-- | :-- | :-- |
+| **Ritter (1892)** dry-bed dam break | relative L2 **0.503%**, h(dam) error **1.90%** | < 5% |
+| **Stoker (1957)** wet-bed dam break | relative L2 **1.101%**, shock within **0.06 cells** | < 12 cells |
+| **Lake at rest**, irregular bed (118 m relief) | spurious discharge **3.92e-12**, drift **1.42e-14 m** | < 1e-10 |
+| **Mass conservation**, fully wet | relative volume error **1.72e-16** | < 1e-9 |
+| **Wet/dry mass budget** | relative mass loss **0.002%** | < 1% |
+| **Grid convergence** (Ritter) | observed order **0.92** | > 0.8 |
+| **Frictional dam break** | rough 1175 m < frictionless 1318 m ≤ Ritter 1396 m | never outruns Ritter |
 
-**2. Nothing is labelled as something it is not.**
+```bash
+make validate     # reproduces all seven in ~20 seconds
+```
+
+Plots and full error tables: **[`docs/validation/`](docs/validation/)**.
+
+> The Ritter front lags the analytical front by 21.1%, and that is **documented,
+> not hidden**: a monotone second-order scheme cannot resolve the infinite
+> gradient where depth reaches zero. What matters is the direction — the
+> modelled flood must never arrive *earlier* than physics allows.
+
+### 2️⃣ Nothing is labelled as something it is not
 
 `GET /api/health/engines` probes the machine. When Delft3D binaries are absent,
-the API, the UI badge and the PDF cover all read
-`FloodGuard-SWE (Delft3D-class FV solver)` — never `Delft3D`. A test fails the
-build if any path emits the wrong string. The same rule holds for SPH: PySPH is
-named when PySPH runs, and when it cannot, the engine reports itself unavailable
-rather than returning a depth-averaged result under an SPH label.
+the API response, the UI badge and the PDF cover all read
+`FloodGuard-SWE (Delft3D-class FV solver)` — **never** `Delft3D`.
 
-**3. "Not computed" is never rendered as zero.**
+Three tests fail the build if any code path emits the wrong string:
 
-A layer that failed to download shows an em dash and a reason on hover. Those
-are different statements about the world, and conflating them in a flood
-exposure report is dangerous.
+```
+test_health.py::test_unavailable_delft3d_is_never_labelled_delft3d
+test_swe_fv.py::test_engine_never_claims_to_be_delft3d
+test_engines_adapters.py::test_delft3d_refuses_to_run_without_a_binary
+```
+
+The same rule holds for SPH. PySPH is named when PySPH runs; when it cannot, the
+engine reports itself **unavailable** rather than returning a depth-averaged
+result under an SPH label.
+
+### 3️⃣ "Not computed" is never rendered as zero
+
+A layer that failed to download shows an **em dash** and a reason on hover.
+`None` in Python, `null` in JSON, `—` in the UI. Enforced in
+[`frontend/src/components/Value.tsx`](frontend/src/components/Value.tsx); there
+is no code path that turns a null into a number.
+
+*Zero buildings flooded* and *we could not fetch the building layer* are
+different statements about the world. Conflating them in a flood exposure report
+is dangerous.
 
 ---
 
