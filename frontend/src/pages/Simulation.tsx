@@ -10,8 +10,9 @@ import {
   useScenarios,
   useSubmitSimulation,
   useTowns,
+  useWarning,
 } from '../api/hooks'
-import { CrossSectionChart, HydrographChart } from '../components/Charts'
+import { BreachEnsembleChart, CrossSectionChart, HydrographChart } from '../components/Charts'
 import InputPanel from '../components/InputPanel'
 import MapView, { LAYER_TITLES } from '../components/MapView'
 import {
@@ -25,6 +26,7 @@ import {
 } from '../components/ResultsPanel'
 import SwipeMap from '../components/SwipeMap'
 import type { UploadSelection } from '../components/UploadPanel'
+import WarningPanel from '../components/WarningPanel'
 import { Panel, formatMinutes, formatNumber } from '../components/Value'
 import type { MapLayer, ScenarioSummary, SimulationRequest } from '../types/api'
 
@@ -66,6 +68,7 @@ export default function Simulation() {
   const towns = useTowns(runId)
   const summary = useResultSummary(runId)
   const frames = useFrames(runId)
+  const warning = useWarning(runId)
 
   // The scenario shown on the map: the loaded run's scenario when there is
   // one, otherwise whatever is selected in the input panel.
@@ -388,6 +391,7 @@ export default function Simulation() {
                 frame={frame}
                 timeMinutes={frameMinutes}
                 aoiUploadId={uploads.aoi}
+                safeGround={warning.data?.towns ?? []}
                 className="h-[460px]"
               />
             )}
@@ -490,6 +494,7 @@ export default function Simulation() {
           </section>
 
           <HydrographChart runId={runId} />
+          <BreachEnsembleChart runId={runId} />
           <CrossSectionChart
             runId={runId}
             scenario={scenario}
@@ -501,6 +506,7 @@ export default function Simulation() {
         {/* ---------------- right: results ---------------- */}
         <div className="col-span-12 space-y-3 lg:col-span-3">
           <ResultsPanel runId={runId} engineIndex={engineIndex} onEngineChange={setEngineIndex} />
+          <WarningPanel runId={runId} />
           <AoiPanel runId={runId} uploadId={uploads.aoi} />
           <ImpactPanel runId={runId} />
           <TownTable runId={runId} />

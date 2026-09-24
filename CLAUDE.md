@@ -37,6 +37,11 @@ Two engines: `swe_fv` (FloodGuard-SWE, finite volume, verified 7/7) and
 `engines/sph_swe.py`, `engines/_sph_kernels.py`, `validation/sph_checks.py`).
 Both scenario YAMLs default to `engines: [swe_fv, sph_swe]`.
 Last local results: 165 backend tests + 14 frontend tests passing; `npm run build` clean.
+Round 2b (also done): early warning — `floodguard/warning/` (alert levels, safe ground, EN/HI
+bulletin, SMS, CAP 1.2 Exercise-only), `app/api/warning.py`, breach-model ensemble
+(`breach_ensemble.json`), PDF §2.1, `WarningPanel.tsx`, `BreachEnsembleChart`; 16 + 1 new tests passed.
+Not yet seen on a real run: the warning panel, safe-ground lines and ensemble chart need a
+completed run made with this code (older runs lack `bed.tif` / `breach_ensemble.json`).
 
 ## Remaining work, in priority order
 

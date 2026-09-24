@@ -394,3 +394,75 @@ export interface LegendBin {
 }
 
 export type MapLayer = 'depth' | 'velocity' | 'arrival' | 'hazard' | 'difference'
+
+// --- early warning -------------------------------------------------------------
+
+export type AlertLevel = 'RED' | 'ORANGE' | 'YELLOW' | 'NONE' | 'NOT_ASSESSED'
+
+export interface SafeGround {
+  distance_km: number
+  bearing_deg: number
+  direction: string
+  lon: number
+  lat: number
+  ground_elevation_m: number
+  height_above_flood_m: number
+}
+
+export interface TownAlert {
+  name: string
+  lon: number
+  lat: number
+  level: AlertLevel
+  action_en: string
+  action_hi: string
+  arrival_min: number | null
+  max_depth_m: number | null
+  max_velocity_ms: number | null
+  hazard_class: string | null
+  population: number | null
+  safe_ground: SafeGround | null
+  safe_ground_reason: string
+  reasons: string[]
+}
+
+export interface SmsMessage {
+  town: string
+  level: AlertLevel
+  text: string
+  chars: number
+  segments: number
+}
+
+export interface WarningBulletin {
+  run_id: string
+  scenario: string
+  issued_utc: string
+  towns: TownAlert[]
+  counts: Record<AlertLevel, number>
+  population_red_orange: number | null
+  convention: string
+  safe_ground_method: string
+  disclaimer_en: string
+  disclaimer_hi: string
+  note: string
+  sms: SmsMessage[]
+  sms_hi: SmsMessage[]
+}
+
+export interface BreachEnsemble {
+  times_hours: number[]
+  members: Array<{
+    model: string
+    applicable: boolean
+    used_in_run: boolean
+    width_m: number
+    formation_time_min: number
+    peak_discharge_m3s: number
+    time_to_peak_min: number
+    volume_mcm: number
+    discharge_m3s: number[]
+  }>
+  peak_spread_ratio: number | null
+  note: string
+}

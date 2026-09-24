@@ -61,6 +61,7 @@ it honestly stands today.
 | 4 | Web dashboard for input and output, handling large rasters | ✅ **Done** — tiled layers, animated frames, swipe comparison, 3D view, uploads, Demo Mode, share links |
 | 5 | Exports to `.shp`, `.kml`, `.geojson`, `.tif` + PDF report | ✅ **Done** — plus COG and KMZ |
 | 6 | Near-real-time flood mapping via Google Earth Engine + Sentinel-1 | 🟡 **Built, never executed** — needs credentials |
+| 7+ | **Early warning** (beyond the brief) | ✅ Alert level per town (RED/ORANGE/YELLOW), lead time, nearest safe ground; bulletin in English and Hindi; SMS texts; **CAP 1.2** alert (the format behind NDMA's SACHET), Exercise status only |
 | 7 | HADR loss-and-damage analysis inside the inundation polygon | ✅ **Built, layers fetched for Tehri** — OSM (24k buildings, 20k roads, 111 health, 90 education), WorldPop, ESA WorldCover cropland |
 
 > **Why the honest status column?** Because rule #1 of this project is that
@@ -323,6 +324,8 @@ Optional credentials, both absent on the development machine:
 | 🟢 **FloodGuard-SPH** second engine | **Real.** Verified 5/5; comparison populates itself when both engines run |
 | 🟢 Dashboard | **Real.** Layers (depth, velocity, arrival, AIDR hazard, engine difference), animated frames, swipe map, 3D terrain, uploads, Demo Mode, share links |
 | 🟢 Uploads | **Real.** DEM GeoTIFF / hydrograph CSV / AOI (GeoJSON, KML, zipped SHP), validated for CRS, extent and units; refused files list every reason |
+| 🟢 Early warning | **Real.** Levels from AIDR hazard + lead time (convention stated on every bulletin), safe ground from the run's own flood surface, EN/HI bulletin, SMS, CAP 1.2 XML, PDF section |
+| 🟢 Breach uncertainty | **Real.** All three breach models routed; outflow envelope and peak spread on the dashboard |
 | 🟢 Land cover | **Real.** ESA WorldCover 10 m → mapped Manning's n + cropland-in-flood metric |
 | 📦 **Delft3D FM** | Deck **generated**; solver runs only if `dflowfm` is on PATH |
 | 📦 **DualSPHysics** | `CaseDef.xml` **generated**; needs GenCase + DualSPHysics binaries |
@@ -444,6 +447,11 @@ phase**. They never print a fabricated result.
 - [x] **3D view** — deck.gl TerrainLayer + water surface
 - [x] Time-indexed tiles — the raster animates from stored solver frames
 - [x] Any catalog dam from the GUI (DEM fetched automatically on first run)
+
+**Beyond the brief**
+
+- [x] Early-warning bulletin (EN + Hindi), SMS, CAP 1.2 alert, nearest safe ground
+- [x] Breach-model uncertainty envelope
 
 **P2**
 

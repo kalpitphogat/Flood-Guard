@@ -2,7 +2,7 @@ import * as maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useEffect, useRef, useState } from 'react'
 import { useLegend } from '../api/hooks'
-import type { MapLayer, ScenarioSummary, TownResult } from '../types/api'
+import type { MapLayer, ScenarioSummary, TownAlert, TownResult } from '../types/api'
 
 /**
  * The inundation map.
@@ -77,6 +77,8 @@ export interface MapViewProps {
   /** Simulated time in minutes for the town markers; null = whole run. */
   timeMinutes?: number | null
   aoiUploadId?: string | null
+  /** Towns with a computed nearest safe ground; drawn as town → safe-point lines. */
+  safeGround?: TownAlert[]
   className?: string
 }
 
@@ -89,6 +91,7 @@ export default function MapView({
   frame = null,
   timeMinutes = null,
   aoiUploadId = null,
+  safeGround = [],
   className = '',
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -185,6 +188,62 @@ export default function MapView({
       paint: { 'line-color': '#7c3aed', 'line-width': 2, 'line-dasharray': [2, 1] },
     })
   }, [ready, aoiUploadId])
+
+  // --- nearest safe ground: a dashed line from each town to its safe point ---
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+    for (const id of ['safe-line', 'safe-point']) if (map.getLayer(id)) map.removeLayer(id)
+    if (map.getSource('safe')) map.removeSource('safe')
+    const withTarget = safeGround.filter((t) => t.safe_ground)
+    if (!withTarget.length) return
+    map.addSource('safe', {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: withTarget.flatMap((t) => [
+          {
+            type: 'Feature' as const,
+            properties: { town: t.name },
+            geometry: {
+              type: 'LineString' as const,
+              coordinates: [
+                [t.lon, t.lat],
+                [t.safe_ground!.lon, t.safe_ground!.lat],
+              ],
+            },
+          },
+          {
+            type: 'Feature' as const,
+            properties: { town: t.name },
+            geometry: {
+              type: 'Point' as const,
+              coordinates: [t.safe_ground!.lon, t.safe_ground!.lat],
+            },
+          },
+        ]),
+      },
+    })
+    map.addLayer({
+      id: 'safe-line',
+      type: 'line',
+      source: 'safe',
+      filter: ['==', ['geometry-type'], 'LineString'],
+      paint: { 'line-color': '#15803d', 'line-width': 2, 'line-dasharray': [1.5, 1] },
+    })
+    map.addLayer({
+      id: 'safe-point',
+      type: 'circle',
+      source: 'safe',
+      filter: ['==', ['geometry-type'], 'Point'],
+      paint: {
+        'circle-radius': 6,
+        'circle-color': '#22c55e',
+        'circle-stroke-color': '#14532d',
+        'circle-stroke-width': 2,
+      },
+    })
+  }, [ready, safeGround])
 
   // --- dam and town markers ---
   useEffect(() => {

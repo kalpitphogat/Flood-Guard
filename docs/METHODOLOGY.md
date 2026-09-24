@@ -464,6 +464,33 @@ non-events will not be read.
 
 ---
 
+### 5.4 Early warning
+
+`floodguard/warning/` turns the town table into an Emergency Action Plan
+input. **Alert level** per town — a FloodGuard convention, printed on every
+bulletin, pending the district EAP's own triggers (CWC EAP guidelines, 2016):
+RED if the wave arrives within 120 min and the AIDR hazard is H4+ or depth
+≥ 1.2 m; ORANGE if hazard H3+ or depth ≥ 0.5 m; YELLOW if flooded at all;
+NOT ASSESSED outside the domain.
+
+**Nearest safe ground**: the nearest cell that never flooded *and* stands at
+least 2 m above the computed water surface at its nearest flooded cell
+(Euclidean distance transform on the run grid). Straight-line, not a route;
+bounded by the modelled corridor, and it says so when no such cell exists.
+
+**Outputs**: bulletin in English and Hindi (town names left in English), SMS
+texts with GSM-7 / UCS-2 segment counts, and an OASIS **CAP 1.2** document —
+the format of India's national alert dissemination (NDMA SACHET). Status is
+only ever Exercise/Test/Draft, `certainty` is always "Possible" (a scenario,
+not an observation), and the sender is "model output".
+
+### 5.5 Breach uncertainty envelope
+
+Every empirical breach model is routed through the same elevation–area–capacity
+curve (level-pool routing takes seconds), and the outflows are plotted
+together with the peak spread. Only the chosen model drives the 2D engines;
+the envelope shows how much the result depends on that choice.
+
 ## 6. Known limitations
 
 1. **DSM, not DTM.** Depths biased low and arrival late under forest canopy.

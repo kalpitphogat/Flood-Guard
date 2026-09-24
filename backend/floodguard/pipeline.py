@@ -645,6 +645,10 @@ def simulate(
             inflow_m3s=scenario.reservoir.inflow_m3s,
         )
     warnings.extend(hydrograph.warnings)
+    if not scenario.inflow_hydrograph_csv:
+        _write_breach_ensemble(
+            out_dir, scenario, pre, predictions, used, crest,
+        )
     if spread["width_m"]["spread_ratio"] > 2.0:
         warnings.append(
             f"The breach-parameter models disagree by a factor of "
@@ -865,6 +869,74 @@ def _run_impact(
         json.dumps(payload, indent=2, default=str), encoding="utf-8"
     )
     return payload
+
+
+def _write_breach_ensemble(
+    out_dir: Path,
+    scenario: Scenario,
+    pre: PreprocessResult,
+    predictions: list,
+    used,
+    crest: float,
+) -> None:
+    """Route the outflow for EVERY breach model, not just the one used.
+
+    The three empirical models routinely disagree by a factor of several on
+    width, and breach geometry dominates the uncertainty of the whole result.
+    Level-pool routing takes seconds, so the envelope costs almost nothing and
+    turns "we picked Froehlich" into "here is the range, and where our run sits
+    in it". Written on a common time grid so the chart can overlay them.
+    """
+    duration = scenario.solver.duration_hours * 3600.0
+    grid = np.linspace(0.0, duration, 361)
+    members = []
+    for geometry in predictions:
+        try:
+            hyd = routing.route(
+                pre.reservoir.curve,
+                geometry,
+                initial_level_m=scenario.initial_level_m,
+                crest_elevation_m=crest,
+                scenario_type=scenario.scenario_type,
+                shape=scenario.breach.shape,
+                growth=scenario.breach.growth,
+                duration_s=duration,
+                inflow_m3s=scenario.reservoir.inflow_m3s,
+            )
+        except Exception as exc:  # noqa: BLE001 - one model failing must not stop the run
+            log.warning("breach ensemble: %s could not be routed: %s", geometry.model, exc)
+            continue
+        members.append(
+            {
+                "model": geometry.model,
+                "applicable": geometry.applicable,
+                "used_in_run": geometry.model == used.model,
+                "width_m": geometry.width_m,
+                "formation_time_min": geometry.formation_time_min,
+                "peak_discharge_m3s": hyd.peak_discharge_m3s,
+                "time_to_peak_min": hyd.time_to_peak_s / 60.0,
+                "volume_mcm": hyd.total_volume_m3 / 1e6,
+                "discharge_m3s": [float(hyd.q_at(float(t))) for t in grid],
+            }
+        )
+    if not members:
+        return
+    peaks = [m["peak_discharge_m3s"] for m in members]
+    (out_dir / "breach_ensemble.json").write_text(
+        json.dumps(
+            {
+                "times_hours": (grid / 3600.0).tolist(),
+                "members": members,
+                "peak_spread_ratio": max(peaks) / min(peaks) if min(peaks) > 0 else None,
+                "note": (
+                    "Outflow routed through the same reservoir curve for each empirical "
+                    "breach model. Only the model marked used_in_run drove the 2D engines; "
+                    "the others show how much the answer depends on that choice."
+                ),
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 def pre_bed_cropped(pre: PreprocessResult, bundle: ResultBundle) -> np.ndarray:

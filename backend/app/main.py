@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import catalog, health, monitoring, results, simulate, uploads, views
+from app.api import catalog, health, monitoring, results, simulate, uploads, views, warning
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -55,6 +55,7 @@ app.include_router(results.router)
 app.include_router(monitoring.router)
 app.include_router(uploads.router)
 app.include_router(views.router)
+app.include_router(warning.router)
 
 
 @app.on_event("startup")

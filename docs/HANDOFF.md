@@ -71,6 +71,18 @@ Library with 14 tests.
 
 ---
 
+### Round 2b — beyond the brief (HADR)
+
+| File | What |
+| --- | --- |
+| `backend/floodguard/warning/bulletin.py` | alert levels (stated convention), EN/HI bulletin, SMS with segment counts, CAP 1.2 XML (Exercise/Test/Draft only, certainty Possible) |
+| `backend/floodguard/warning/safe_ground.py` | nearest cell ≥ 2 m above the computed flood surface, via distance transform |
+| `backend/app/api/warning.py` | `/warning`, `/warning/bulletin.txt?lang=`, `/warning/cap.xml`, `/breach-ensemble` |
+| `backend/floodguard/pipeline.py` | `_write_breach_ensemble` → `breach_ensemble.json` (all 3 models routed) |
+| `backend/floodguard/report.py` | PDF §2.1 Early-warning levels |
+| `frontend/src/components/WarningPanel.tsx`, `Charts.tsx::BreachEnsembleChart`, `MapView` safe-ground layer | UI |
+| `backend/tests/test_warning.py` (16), `frontend/src/components/WarningPanel.test.tsx` (1) | tests — both passed locally |
+
 ## 2. What was executed, and what was not
 
 | Item | Status on the dev machine (Windows, Python 3.14, no conda/MSVC/Docker) |

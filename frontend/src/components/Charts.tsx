@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { useCrossSection, useHydrographs } from '../api/hooks'
+import { useBreachEnsemble, useCrossSection, useHydrographs } from '../api/hooks'
 import type { ScenarioSummary } from '../types/api'
 import { NOT_COMPUTED, Panel, Skeleton, formatNumber } from './Value'
 
@@ -248,6 +248,100 @@ export function CrossSectionChart({
           </div>
         </>
       )}
+    </Panel>
+  )
+}
+
+const ENSEMBLE_COLOURS = ['#0369a1', '#c2410c', '#15803d', '#7c3aed']
+
+/**
+ * Breach outflow for every empirical breach model, on one axis.
+ *
+ * Only the model marked "used" drove the 2D engines. The others were routed
+ * through the same reservoir curve to show how much the answer depends on
+ * that one choice — usually more than on anything the solver does.
+ */
+export function BreachEnsembleChart({ runId }: { runId: string | null }) {
+  const data = useBreachEnsemble(runId)
+  if (!runId || data.isError || !data.data) return null
+  const { times_hours, members } = data.data
+  const stride = Math.max(1, Math.floor(times_hours.length / 200))
+  const rows: Array<Record<string, number>> = []
+  for (let i = 0; i < times_hours.length; i += stride) {
+    const row: Record<string, number> = { hours: times_hours[i] }
+    members.forEach((m, k) => {
+      row[`m${k}`] = m.discharge_m3s[i]
+    })
+    rows.push(row)
+  }
+
+  return (
+    <Panel
+      title="Breach uncertainty"
+      subtitle={
+        data.data.peak_spread_ratio
+          ? `peak outflow varies ${data.data.peak_spread_ratio.toFixed(1)}× across the breach models`
+          : 'outflow for every breach model'
+      }
+    >
+      <ResponsiveContainer width="100%" height={170}>
+        <LineChart data={rows} margin={{ top: 4, right: 12, bottom: 16, left: 4 }}>
+          <CartesianGrid stroke={GRID} strokeDasharray="2 3" />
+          <XAxis
+            dataKey="hours"
+            type="number"
+            domain={['dataMin', 'dataMax']}
+            tick={AXIS}
+            tickFormatter={(v) => `${Number(v).toFixed(1)}`}
+            label={{ value: 'time (hours)', position: 'insideBottom', offset: -8, ...AXIS }}
+          />
+          <YAxis tick={AXIS} tickFormatter={(v) => `${(Number(v) / 1000).toFixed(0)}k`} />
+          <Tooltip
+            contentStyle={{ fontSize: 11 }}
+            labelFormatter={(v) => `t = ${Number(v).toFixed(2)} h`}
+            formatter={(value, name) => {
+              const k = Number(String(name).slice(1))
+              return [`${formatNumber(Number(value), 0)} m³/s`, members[k]?.model ?? String(name)]
+            }}
+          />
+          {members.map((m, k) => (
+            <Line
+              key={m.model}
+              dataKey={`m${k}`}
+              dot={false}
+              isAnimationActive={false}
+              stroke={ENSEMBLE_COLOURS[k % ENSEMBLE_COLOURS.length]}
+              strokeWidth={m.used_in_run ? 2.2 : 1.2}
+              strokeDasharray={m.used_in_run ? undefined : '4 3'}
+            />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+      <table className="mt-1 w-full text-[10px]">
+        <thead className="text-left uppercase text-slate-400">
+          <tr>
+            <th>Model</th>
+            <th className="text-right">Width</th>
+            <th className="text-right">Peak</th>
+            <th className="text-right">at</th>
+          </tr>
+        </thead>
+        <tbody>
+          {members.map((m, k) => (
+            <tr key={m.model} className="border-t border-slate-50">
+              <td style={{ color: ENSEMBLE_COLOURS[k % ENSEMBLE_COLOURS.length] }}>
+                {m.used_in_run ? '● ' : '○ '}
+                {m.model}
+                {!m.applicable && <span className="ml-1 text-amber-700">(outside its range)</span>}
+              </td>
+              <td className="text-right tabular-nums">{formatNumber(m.width_m, 0)} m</td>
+              <td className="text-right tabular-nums">{formatNumber(m.peak_discharge_m3s, 0)} m³/s</td>
+              <td className="text-right tabular-nums">{formatNumber(m.time_to_peak_min, 0)} min</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="mt-1 text-[10px] leading-relaxed text-slate-500">{data.data.note}</p>
     </Panel>
   )
 }

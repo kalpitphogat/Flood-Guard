@@ -19,6 +19,8 @@ import type {
   TownResult,
   BreachComparison,
   AoiStats,
+  BreachEnsemble,
+  WarningBulletin,
   FramesResponse,
   LegendBin,
   MapLayer,
@@ -314,6 +316,24 @@ export function useAoiStats(runId: string | null, uploadId: string | null) {
     queryKey: ['result', runId, 'aoi', uploadId],
     queryFn: () => api<AoiStats>(`/api/results/${runId}/aoi-stats?upload_id=${uploadId}`),
     enabled: !!runId && !!uploadId,
+    retry: false,
+  })
+}
+
+export function useWarning(runId: string | null) {
+  return useQuery({
+    queryKey: ['result', runId, 'warning'],
+    queryFn: () => api<WarningBulletin>(`/api/results/${runId}/warning`),
+    enabled: !!runId,
+    retry: false,
+  })
+}
+
+export function useBreachEnsemble(runId: string | null) {
+  return useQuery({
+    queryKey: ['result', runId, 'breach-ensemble'],
+    queryFn: () => api<BreachEnsemble>(`/api/results/${runId}/breach-ensemble`),
+    enabled: !!runId,
     retry: false,
   })
 }

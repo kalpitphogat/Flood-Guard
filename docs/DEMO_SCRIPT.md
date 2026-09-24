@@ -166,6 +166,21 @@ Scroll to section 8.
 
 ---
 
+Point at the **Early Warning** panel on the right.
+
+> "This is what the district control room actually needs: each town gets a
+> level — Devprayag red, evacuate now — its lead time, and the nearest ground
+> that stays at least two metres above the computed flood, with the direction.
+> The green dashed lines on the map are those routes, as the crow flies — we
+> say it's straight-line, not a road route."
+
+Click **बुलेटिन (हिंदी)**, then **CAP 1.2 alert**.
+
+> "The bulletin in Hindi, SMS texts sized to real SMS segments, and a Common
+> Alerting Protocol file — the standard NDMA's SACHET system is built on. It
+> is marked Exercise; the tool refuses to issue an Actual alert, because that's
+> an authority's call, not software's."
+
 Click **Share link**.
 
 > "A short link that reopens this exact view — run, layer, frame. Short enough

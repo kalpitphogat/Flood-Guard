@@ -195,6 +195,44 @@ def build_report(run_dir: Path, out_path: Path | None = None) -> Path:
             )
         )
 
+        # Early-warning levels, safe ground: the same payload the dashboard and
+        # the CAP export use, so the three cannot disagree.
+        try:
+            bulletin = _warning_payload(run_dir, data)
+        except Exception as exc:  # noqa: BLE001 - a warning failure must not lose the report
+            bulletin = None
+            story.append(Paragraph(f"Early-warning levels could not be computed: {exc}", caveat))
+        if bulletin:
+            story.append(Spacer(1, 3 * mm))
+            story.append(Paragraph("2.1 Early-warning levels", h2))
+            story.append(Paragraph(bulletin["disclaimer_en"] + " " + bulletin["convention"], small))
+            story.append(Spacer(1, 2 * mm))
+            rows = []
+            for t in bulletin["towns"]:
+                sg = t.get("safe_ground")
+                rows.append([
+                    t["name"],
+                    t["level"],
+                    t["action_en"],
+                    t.get("hazard_class") or "—",
+                    f"{sg['distance_km']:.1f} km {sg['direction']}" if sg else "—",
+                ])
+            story.append(
+                _data_table(
+                    Table, TableStyle, colors, mm,
+                    ["Location", "Level", "Action", "Hazard", "Nearest safe ground"],
+                    rows,
+                )
+            )
+            story.append(Spacer(1, 1 * mm))
+            story.append(
+                Paragraph(
+                    bulletin["safe_ground_method"] + " The Hindi bulletin and the CAP 1.2 "
+                    "alert are separate downloads from the dashboard.",
+                    small,
+                )
+            )
+
     # ---------------------------------------------------------------- breach
     story.append(Paragraph("3. Breach parameters", h2))
     used = breach.get("used", {})
@@ -395,6 +433,33 @@ def build_report(run_dir: Path, out_path: Path | None = None) -> Path:
     doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
     log.info("wrote %s", out_path)
     return out_path
+
+
+def _warning_payload(run_dir: Path, data: dict[str, Any]) -> dict[str, Any] | None:
+    """The early-warning payload for the report, from the run's own rasters."""
+    from floodguard.warning.bulletin import build
+
+    if not data.get("towns"):
+        return None
+    depth = bed = transform = crs = None
+    depth_path, bed_path = run_dir / "max_depth.tif", run_dir / "bed.tif"
+    if depth_path.exists() and bed_path.exists():
+        import numpy as np
+        import rasterio
+
+        with rasterio.open(depth_path) as src:
+            depth = src.read(1).astype(np.float64)
+            if src.nodata is not None:
+                depth[depth == src.nodata] = np.nan
+            transform, crs = src.transform, src.crs.to_string()
+        with rasterio.open(bed_path) as src:
+            bed = src.read(1).astype(np.float64)
+            if src.nodata is not None:
+                bed[bed == src.nodata] = np.nan
+    return build(
+        data, scenario_name=data.get("scenario_id", ""), depth=depth, bed=bed,
+        transform=transform, crs=crs,
+    )
 
 
 def _footer(canvas, doc) -> None:
