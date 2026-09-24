@@ -3,9 +3,11 @@
 Exact click order, the numbers to expect, what to say, and the three questions
 judges will ask.
 
-**Before you start:** `make demo` (or `make serve-backend` and
-`make serve-frontend`). Check `python -m floodguard.cli engines` prints a table
-— that is also your answer to question 1 if it comes up early.
+**Before you start:** `make serve` (one process: API + built dashboard on
+:8000), or `make demo`. Run `python -m floodguard.cli demo --check` — every row
+should be OK, including **Two-engine comparison**. Switch on **Demo Mode** in
+the Simulation toolbar before the judges arrive, so a completed run is already
+on screen.
 
 ---
 
@@ -49,8 +51,9 @@ Point at the amber spread warning.
 
 ## 1:15 — 2:00 · Results
 
-Switch to a **precomputed run** (Demo Mode, or select a finished job). Do not
-run a fresh 6-hour simulation live.
+Flip the **Demo Mode** switch in the toolbar. It loads a completed run from
+disk in a second — a run that `floodguard simulate` produced, not a canned
+result. Do not run a fresh 6-hour simulation live.
 
 Point at the four KPI cards.
 
@@ -76,14 +79,21 @@ Point at the engine badge.
 
 Press **▶ Play** on the time slider.
 
-> "Towns light up as the computed arrival time passes. Devprayag, then
+> "Each step is a depth field the solver stored during the run — the raster
+> itself is animating, served as tiles so the browser never downloads the
+> grid. Towns turn blue as the computed wave reaches them: Devprayag, then
 > Rishikesh, then Haridwar."
 
-Point at the caption under the slider.
+Switch the layer dropdown to **Flood arrival time**, then **Hazard class**.
 
-> "And note what this says: the depth raster is the maximum extent over the
-> whole run — time-indexed tiles are the next step. We'd rather label that than
-> let you assume the raster is animating."
+> "Arrival time is what an evacuation plan runs on. Hazard is the Australian
+> Disaster Resilience Handbook 7 classification — depth times velocity — so
+> H5 and H6 mean buildings themselves are at risk, not just people."
+
+Open the **3D View** tab and drag to tilt.
+
+> "The terrain is the conditioned DEM the solver actually ran on, and the water
+> is its computed surface. Dry cells aren't smoothed over to look continuous."
 
 Point at the **cross-section** panel below.
 
@@ -92,6 +102,17 @@ Point at the **cross-section** panel below.
 > that's a valley section, not a town section."
 
 ---
+
+## 2:30 — 2:45 · Two engines, compared
+
+Open **Comparison View**. Drag the swipe handle across the valley.
+
+> "Left is our finite-volume solver, right is our SPH solver — particles, no
+> mesh, no Riemann solver, completely different numerics, same physics, same
+> grid, same breach. Where they agree we trust the answer more; where they
+> don't, the difference raster shows exactly where. The table underneath is
+> computed from both rasters: CSI of the extents, depth RMSE, and arrival at
+> each town by each engine."
 
 ## 2:45 — 3:30 · The part that wins it — verification
 
@@ -109,7 +130,10 @@ Go to **About**, scroll to Validation. Or open `docs/validation/ritter_dam_break
 > scheme that isn't well-balanced produces metres per second of flow that
 > doesn't exist, on every slope of a Himalayan DEM."
 
-> "Seven checks, all passing, run by `make validate`, plots in the repository."
+> "Seven checks, all passing, run by `make validate`, plots in the repository.
+> And the SPH engine is held to the same exact solutions: Ritter at about 4%,
+> Stoker at about 4%, and momentum conserved to 10⁻¹⁶ because every particle
+> pair force is equal and opposite."
 
 Then the sentence that matters:
 
@@ -142,9 +166,21 @@ Scroll to section 8.
 
 ---
 
+Click **Share link**.
+
+> "A short link that reopens this exact view — run, layer, frame. Short enough
+> to send by SMS to a district control room."
+
 ## 4:15 — 5:00 · Generality and close
 
-Change the scenario dropdown to **Hirakud — Mahanadi**.
+Change the scenario dropdown to **Hirakud — Mahanadi**. Then flip the source to
+**Any catalog dam** and open the dropdown.
+
+> "Or any of the thirty dams in the CWC register — the DEM is fetched on the
+> first run. And under Upload Custom Data, an agency can bring its own DEM, its
+> own design hydrograph, or its district boundary; a file with no CRS, or a
+> discharge column in cusecs, is refused with the reason, not silently
+> converted."
 
 > "Same code, different YAML. Tehri is 260 metres of head in a gorge: steep,
 > fast, minutes of warning. Hirakud is 61 metres behind a 4.8 km embankment on
@@ -179,6 +215,14 @@ Then turn it into a positive:
 > hydrograph, the DIMR config — from a DEM and a dam record. It's in the
 > exports. That's days of work for a hydraulics team, and it runs the moment
 > you point it at a licensed solver."
+
+### 1½. "You said two engines — isn't that the same code twice?"
+
+> "No. FloodGuard-SWE is Eulerian: a fixed grid, a Riemann solver at every
+> face. FloodGuard-SPH is Lagrangian: water is 120,000 particles of fixed
+> volume, depth is a kernel sum, there is no face and no Riemann solver. They
+> share the DEM, the breach hydrograph and the equations — which is the point:
+> the difference between them is numerical uncertainty, measured."
 
 ### 2. "How do I know the numbers are right?"
 
@@ -219,6 +263,8 @@ If pressed on what would break:
 | No venue Wi-Fi | Everything after `make data` is offline. Use a precomputed run |
 | A live run is slow | Say why: 30 m over 120 km is ~50,000 timesteps. Switch to 90 m and say that resolution is exposed because peak depths genuinely depend on it |
 | Exposure cards all show dashes | Correct behaviour — OSM/WorldPop weren't fetched. Say so; it's the rule working |
-| Someone asks about SPH | PySPH needs a C compiler and isn't installed. The near-field case definition is in the repo and reviewable; we report it unavailable rather than labelling a depth-averaged result as SPH |
+| Someone asks "is that real SPH?" | Yes — Lagrangian particles, Wendland kernel, Monaghan viscosity, verified against Ritter and Stoker. It is *depth-integrated* SPH, not a 3D WCSPH of the breach face; the label says so. PySPH/DualSPHysics would add the 3D near field, and the DualSPHysics CaseDef is generated |
+| Comparison tab is empty | The loaded run had one engine. Pick a run in Demo Mode whose label shows `swe_fv + sph_swe` |
+| 3D tab says "no bed.tif" | The run predates the 3D view; load a newer run |
 
 **Never** run a fresh full-resolution simulation live. Load a precomputed run.

@@ -1,4 +1,11 @@
-import { useComparison, useImpact, useResultSummary, useTowns } from '../api/hooks'
+import {
+  useAoiStats,
+  useComparison,
+  useImpact,
+  useResultSummary,
+  useTowns,
+  useTownsByEngine,
+} from '../api/hooks'
 import type { EngineSummary } from '../types/api'
 import {
   Caveat,
@@ -7,6 +14,7 @@ import {
   NOT_COMPUTED,
   Panel,
   Skeleton,
+  Stat,
   formatInteger,
   formatMinutes,
   formatNumber,
@@ -342,6 +350,13 @@ export function ExportPanel({ runId }: { runId: string | null }) {
     { format: 'tif', label: 'Download Depth Raster (.TIF)', tone: 'bg-slate-700 hover:bg-slate-800' },
     { format: 'pdf', label: 'Generate Report (PDF)', tone: 'bg-slate-600 hover:bg-slate-700' },
   ]
+  const more = [
+    { format: 'kmz', label: 'KMZ (animated in Google Earth)' },
+    { format: 'velocity_tif', label: 'Velocity .TIF' },
+    { format: 'arrival_tif', label: 'Arrival time .TIF' },
+    { format: 'hazard_tif', label: 'Hazard (D×V) .TIF' },
+    { format: 'csv', label: 'Hydrograph .CSV' },
+  ]
 
   return (
     <Panel title="Export Results">
@@ -356,6 +371,21 @@ export function ExportPanel({ runId }: { runId: string | null }) {
             {label}
           </a>
         ))}
+        <div className="flex flex-wrap gap-1 pt-1">
+          {more.map(({ format, label }) => (
+            <a
+              key={format}
+              href={runId ? `/api/results/${runId}/export?format=${format}` : undefined}
+              className={`rounded border px-1.5 py-0.5 text-[10px] ${
+                runId
+                  ? 'border-slate-300 text-slate-700 hover:bg-slate-50'
+                  : 'pointer-events-none border-slate-200 text-slate-300'
+              }`}
+            >
+              {label}
+            </a>
+          ))}
+        </div>
         <p className="pt-1 text-[10px] leading-relaxed text-slate-500">
           Every file carries a provenance block: DEM source and resolution, dam parameters
           and their citations, engine name and version, solver settings, git commit and UTC
@@ -407,5 +437,98 @@ export function TownTable({ runId }: { runId: string | null }) {
         </tbody>
       </table>
     </Panel>
+  )
+}
+
+/** A number with its unit, or the bare not-computed mark — never "— km²". */
+function withUnit(value: number | null | undefined, digits: number, unit: string): string {
+  return value === null || value === undefined ? NOT_COMPUTED : `${formatNumber(value, digits)} ${unit}`
+}
+
+/** Flood statistics inside an uploaded area of interest. */
+export function AoiPanel({ runId, uploadId }: { runId: string | null; uploadId: string | null }) {
+  const stats = useAoiStats(runId, uploadId)
+  if (!runId || !uploadId) return null
+  return (
+    <Panel title="Inside your area of interest" subtitle={stats.data?.aoi_name ?? undefined}>
+      {stats.isLoading && <Skeleton className="h-16" />}
+      {stats.isError && (
+        <p className="text-[11px] text-rose-700">{(stats.error as Error).message}</p>
+      )}
+      {stats.data && (
+        <div className="space-y-1.5">
+          <dl className="grid grid-cols-2 gap-1.5">
+            <Stat label="Flooded area" value={withUnit(stats.data.flooded_area_km2, 2, 'km²')} />
+            <Stat label="Max depth" value={withUnit(stats.data.max_depth_m, 2, 'm')} />
+            <Stat label="Earliest arrival" value={formatMinutes(stats.data.earliest_arrival_min)} />
+            <Stat
+              label="AOI modelled"
+              value={
+                stats.data.coverage_fraction === null
+                  ? NOT_COMPUTED
+                  : `${Math.round(stats.data.coverage_fraction * 100)}%`
+              }
+            />
+          </dl>
+          {stats.data.reason && (
+            <p className="text-[10px] leading-relaxed text-amber-800">{stats.data.reason}</p>
+          )}
+        </div>
+      )}
+    </Panel>
+  )
+}
+
+/** Arrival at each town by each engine: which solver warns earlier, where it matters. */
+export function TownsByEngineTable({ runId }: { runId: string | null }) {
+  const data = useTownsByEngine(runId)
+  const engines = Object.keys(data.data ?? {})
+  if (!runId || engines.length < 2) return null
+  const towns = data.data![engines[0]].map((t) => t.name)
+  const lookup = (engine: string, name: string) =>
+    data.data![engine].find((t) => t.name === name) ?? null
+
+  return (
+    <div className="mt-3">
+      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+        Arrival at named locations, per engine
+      </div>
+      <table className="w-full text-[11px]">
+        <thead className="text-left text-[10px] uppercase text-slate-400">
+          <tr>
+            <th className="pb-1">Location</th>
+            {engines.map((e) => (
+              <th key={e} className="pb-1 text-right">{e === 'swe_fv' ? 'SWE' : e === 'sph_swe' ? 'SPH' : e}</th>
+            ))}
+            <th className="pb-1 text-right">Δ arrival</th>
+          </tr>
+        </thead>
+        <tbody>
+          {towns.map((name) => {
+            const a = lookup(engines[0], name)?.arrival_min ?? null
+            const b = lookup(engines[1], name)?.arrival_min ?? null
+            return (
+              <tr key={name} className="border-t border-slate-50">
+                <td className="py-0.5 text-slate-800">{name}</td>
+                {engines.map((e) => {
+                  const t = lookup(e, name)
+                  return (
+                    <td key={e} className="py-0.5 text-right tabular-nums">
+                      {formatMinutes(t?.arrival_min ?? null)}
+                      <span className="ml-1 text-slate-400">
+                        {t?.max_depth_m != null ? `${formatNumber(t.max_depth_m, 1)} m` : ''}
+                      </span>
+                    </td>
+                  )
+                })}
+                <td className="py-0.5 text-right tabular-nums text-slate-600">
+                  {a !== null && b !== null ? `${b - a > 0 ? '+' : ''}${(b - a).toFixed(0)} min` : NOT_COMPUTED}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
   )
 }

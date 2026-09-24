@@ -30,7 +30,9 @@ zarr>=2.16
 geopandas>=0.14
 shapely>=2.0
 pyproj>=3.6
-fiona>=1.9
+# fiona is NOT required: geopandas reads/writes through pyogrio, which ships
+# wheels for every current Python (fiona has none for 3.14 yet).
+pyogrio>=0.7
 pystac-client>=0.7
 planetary-computer>=1.0
 whitebox>=2.3

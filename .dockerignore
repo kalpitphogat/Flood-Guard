@@ -1,0 +1,11 @@
+.git
+**/node_modules
+frontend/dist
+.venv
+**/__pycache__
+data/raw
+data/processed
+data/runs
+data/uploads
+reference
+*.sqlite

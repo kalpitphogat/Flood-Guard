@@ -104,6 +104,7 @@ def cmd_data(args) -> int:
         data_dir,
         skip_population=args.skip_population,
         skip_osm=args.skip_osm,
+        skip_landcover=getattr(args, "skip_landcover", False),
         mosaic=not args.no_mosaic,
     )
 
@@ -245,11 +246,13 @@ def cmd_simulate(args) -> int:
     last = {"phase": None}
 
     def progress(*, fraction, phase, message, **extra):
+        # flush: when stdout is redirected to a log file on a server, block
+        # buffering would hide a long run's progress until it finished.
         if phase != last["phase"]:
-            print(f"[{fraction * 100:5.1f}%] {phase}")
+            print(f"[{fraction * 100:5.1f}%] {phase}", flush=True)
             last["phase"] = phase
         if extra.get("step") or phase == "done":
-            print(f"          {message}")
+            print(f"          {message}", flush=True)
 
     result = simulate(
         scenario,
@@ -381,6 +384,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_data.add_argument("--skip-population", action="store_true")
     p_data.add_argument("--skip-osm", action="store_true")
+    p_data.add_argument(
+        "--skip-landcover", action="store_true",
+        help="do not fetch ESA WorldCover; Manning's n will be uniform and labelled so",
+    )
     p_data.add_argument("--no-mosaic", action="store_true")
 
     p_verify = sub.add_parser("verify", help="re-hash every cached input file")

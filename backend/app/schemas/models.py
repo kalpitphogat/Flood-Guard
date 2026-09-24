@@ -146,6 +146,17 @@ class SimulationRequest(BaseModel):
     cfl: float | None = Field(default=None, gt=0, le=1.0)
     wet_threshold_m: float | None = Field(default=None, gt=0)
     manning_n_overrides: dict[str, float] = Field(default_factory=dict)
+    dem_upload_id: str | None = Field(
+        default=None,
+        description="An accepted DEM upload to model on, instead of the fetched DEM.",
+    )
+    hydrograph_upload_id: str | None = Field(
+        default=None,
+        description=(
+            "An accepted hydrograph upload to use as the inflow boundary, replacing "
+            "the breach model's hydrograph. Recorded as user-supplied in every output."
+        ),
+    )
 
 
 class BreachPrediction(BaseModel):
@@ -221,7 +232,7 @@ class ResultSummary(BaseModel):
     peak_discharge_m3s: float | None
     time_to_peak_min: float | None
     total_volume_mcm: float | None
-    resolution_m: float
+    resolution_m: float | None
     warnings: list[str] = Field(default_factory=list)
     provenance: dict[str, Any] = Field(default_factory=dict)
 

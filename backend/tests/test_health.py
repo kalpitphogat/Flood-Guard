@@ -30,7 +30,7 @@ def test_engine_health_endpoint_lists_every_engine():
     r = client.get("/api/health/engines")
     assert r.status_code == 200
     ids = {e["id"] for e in r.json()["engines"]}
-    assert ids == {"swe_fv", "anuga", "delft3d", "sph_pysph", "dualsphysics"}
+    assert ids == {"swe_fv", "sph_swe", "anuga", "delft3d", "sph_pysph", "dualsphysics"}
 
 
 def test_unavailable_delft3d_is_never_labelled_delft3d():
@@ -49,7 +49,7 @@ def test_unavailable_delft3d_is_never_labelled_delft3d():
 
 def test_unavailable_engines_declare_a_substitute():
     for status in probe_all():
-        if status.kind is EngineKind.UNAVAILABLE and status.id != "swe_fv":
+        if status.kind is EngineKind.UNAVAILABLE and status.id not in ("swe_fv", "sph_swe"):
             assert status.substitute_id, f"{status.id} is unavailable but names no substitute"
 
 

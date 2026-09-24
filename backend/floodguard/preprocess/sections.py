@@ -51,6 +51,10 @@ class CrossSection:
             "offsets_m": self.offsets_m.tolist(),
             "bed_m": np.where(np.isfinite(self.bed_m), self.bed_m, None).tolist(),
             "thalweg_m": float(np.nanmin(self.bed_m)) if np.isfinite(self.bed_m).any() else None,
+            # World coordinates (DEM CRS) of every sample, so any result raster
+            # can be sampled along exactly this line later.
+            "xs": self.xs.tolist(),
+            "ys": self.ys.tolist(),
         }
 
     def sample_raster(self, raster: np.ndarray, transform) -> np.ndarray:

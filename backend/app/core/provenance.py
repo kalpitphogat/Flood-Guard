@@ -29,7 +29,16 @@ def git_commit() -> str:
 
     Suffixed '-dirty' when there are uncommitted changes, because a provenance
     record that silently claims a clean commit is worse than no record.
+
+    A container image has no .git, so the Docker build bakes the commit in as
+    FLOODGUARD_GIT_COMMIT; it is labelled as build-time so nobody mistakes it
+    for a live working-tree check.
     """
+    import os
+
+    baked = os.environ.get("FLOODGUARD_GIT_COMMIT", "").strip()
+    if baked and not (REPO_ROOT / ".git").exists():
+        return f"{baked} (image build)"
     try:
         rev = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],

@@ -1,40 +1,37 @@
 # FloodGuard India — local stack.
 #
-# NOTE: Docker is not required to run this project. `make setup && make demo`
-# works natively. This file exists for reproducible deployment and for hosting
-# the Delft3D / DualSPHysics engine containers, which are the only components
-# that genuinely need it.
+# Docker is not required: `make setup && make demo` works natively. This file
+# is for reproducible deployment. One image serves the API and the built
+# dashboard on the same port (see ./Dockerfile).
+#
+#   GIT_COMMIT=$(git rev-parse --short HEAD) docker compose up --build
+#   -> http://localhost:8000
+#
+# NOTE: written against the Dockerfile in this repository, but not executed on
+# the development machine (no Docker there). Treat the first `up` as a test.
 
 services:
-  backend:
+  floodguard:
     build:
-      context: ./backend
+      context: .
       dockerfile: Dockerfile
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
     ports:
       - "8000:8000"
     volumes:
+      # DEMs, runs, uploads and the job store persist on the host.
       - ./data:/app/data
-      - ./docs:/app/docs
     environment:
-      - FLOODGUARD_DATA_DIR=/app/data
       - OPENTOPO_API_KEY=${OPENTOPO_API_KEY:-}
       - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-}
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+      - FLOODGUARD_LOG_LEVEL=${FLOODGUARD_LOG_LEVEL:-INFO}
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    ports:
-      - "5173:5173"
-    depends_on:
-      - backend
-    environment:
-      - VITE_API_BASE=http://localhost:8000
-
-  # Dynamic COG tile server, so the browser never downloads a multi-GB raster.
+  # Optional: a dynamic COG tile server for very large rasters. The built-in
+  # tiler in the API is enough for the demo scenarios.
   tileserver:
     image: ghcr.io/developmentseed/titiler:latest
+    profiles: ["tiles"]
     ports:
       - "8001:8000"
     volumes:

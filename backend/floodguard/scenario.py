@@ -169,6 +169,25 @@ class DomainSpec(BaseModel):
     bbox: tuple[float, float, float, float] | None = None
 
 
+class SPHSpec(BaseModel):
+    """FloodGuard-SPH settings. Unset fields use floodguard.engines.sph_swe defaults."""
+
+    #: Particles over the released volume; sets the particle volume.
+    target_particles: int | None = Field(default=None, gt=100)
+    #: Smoothing length = eta x particle spacing.
+    eta: float | None = Field(default=None, gt=0.5, le=3.0)
+    #: Smoothing-length clamp in grid cells. The max is the main cost control.
+    h_min_cells: float | None = Field(default=None, gt=0)
+    h_max_cells: float | None = Field(default=None, gt=0)
+    cfl: float | None = Field(default=None, gt=0, le=1.0)
+    alpha: float | None = Field(default=None, ge=0)
+    beta: float | None = Field(default=None, ge=0)
+    #: Seconds between rasterisations (arrival-time resolution).
+    sample_interval_s: float | None = Field(default=None, gt=0)
+    #: Wall-clock budget; the run stops and is labelled truncated when it runs out.
+    max_runtime_minutes: float | None = Field(default=None, gt=0)
+
+
 class SolverSpec(BaseModel):
     """Numerical settings. All exposed, none hidden."""
 
@@ -188,6 +207,8 @@ class SolverSpec(BaseModel):
     #: Second-order MUSCL reconstruction. Off = 1st order, more diffusive.
     second_order: bool = True
     max_steps: int = Field(default=2_000_000, gt=0)
+    #: Settings for the second engine, FloodGuard-SPH.
+    sph: SPHSpec = Field(default_factory=SPHSpec)
 
 
 class DemSpec(BaseModel):
@@ -236,6 +257,12 @@ class Scenario(BaseModel):
 
     #: Engines to run, by id. See floodguard.engines.availability.
     engines: list[str] = Field(default_factory=lambda: ["swe_fv"])
+
+    #: Optional user-supplied outflow hydrograph (CSV: time, discharge). When
+    #: set, it REPLACES the breach model's hydrograph as the inflow boundary,
+    #: and every output records that the hydrograph was supplied, not modelled.
+    #: This is how an agency runs its own design flood or an observed event.
+    inflow_hydrograph_csv: str | None = None
 
     #: Free-text notes that appear in the PDF report's assumptions section.
     notes: list[str] = Field(default_factory=list)

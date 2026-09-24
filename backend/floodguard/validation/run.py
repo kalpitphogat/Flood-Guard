@@ -15,6 +15,10 @@ Tests run
    design order, otherwise the scheme is not doing what it claims.
 6. **Frictional dam break** — the front must lag Ritter's frictionless tip.
 
+The second engine, FloodGuard-SPH, is then held to Ritter and Stoker, exact
+volume and momentum conservation, a measured lake-at-rest residual and
+particle-refinement convergence — see `floodguard.validation.sph_checks`.
+
 Every result is written to `docs/validation/` as a PNG plus a JSON error table,
 and `summary.md` collects them for the About page.
 """
@@ -626,6 +630,17 @@ def run_validation(out_dir: Path, quick: bool = False) -> int:
         (check_friction, (out_dir,)),
     ):
         check = fn(*args)
+        report.checks.append(check)
+        print(check.line())
+
+    # The second engine is held to the same analytical solutions.
+    from floodguard.validation.sph_checks import SPH_CHECKS
+
+    print()
+    print("FloodGuard-SPH verification")
+    print("=" * 78)
+    for fn in SPH_CHECKS:
+        check = fn(out_dir)
         report.checks.append(check)
         print(check.line())
 

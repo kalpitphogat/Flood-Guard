@@ -339,7 +339,77 @@ breach with zero momentum forms a static column that collapses radially — an
 artificial second dam break whose signature then propagates downstream as
 though it were the real wave.
 
-### 4.5 Other engines
+### 4.5 The second engine — FloodGuard-SPH
+
+The problem statement asks for two hydrodynamic engines, SPH and a
+Delft3D-class solver, compared quantitatively. ANUGA (conda-forge only) and
+PySPH (needs a C compiler) could not be installed on the development machine,
+so the second engine is a native **depth-integrated SPH** solver of the same
+shallow-water equations: `floodguard/engines/sph_swe.py`.
+
+It shares **no numerics** with FloodGuard-SWE. Water is a set of Lagrangian
+particles of fixed volume; there is no mesh, no Riemann solver and no
+reconstruction. Depth is a kernel sum over neighbours; shocks are captured by
+artificial viscosity instead of upwinding. Two independent discretisations that
+agree bound the numerical uncertainty; where they disagree, the difference
+raster shows where to distrust both.
+
+| Ingredient | Choice | Reference |
+| --- | --- | --- |
+| Depth | d_i = Σ_j V_j W(r_ij, h_i) — the SPH density summation | Wang & Shen (1999) |
+| Kernel | Wendland C2, support 2h (no pairing instability) | Wendland (1995) |
+| Smoothing length | h_i = 1.6 √(V_i / d_i), clamped to [0.25, 3] cells | Vacondio et al. (2012) |
+| Momentum | gas-dynamics analogy, P/ρ² = g/2 → a_i = −Σ V_j (g + Π_ij) ∇W(r_ij, h̄_ij) | Ata & Soulaïmani (2005) |
+| Shocks | Monaghan artificial viscosity, α = 0.5, β = 0.5 | Monaghan (1992) |
+| Bed | −g ∇z, bilinear in the particle position | — |
+| Friction | semi-implicit Manning | — |
+| Time | symplectic Euler, CFL 0.3 on √(gd) + ‖v‖, plus the force criterion | Monaghan (1992) |
+| Breach inflow | particles injected over the breach face at critical-flow velocity √(g d_c), d_c = (q_w²/g)^⅓ | — |
+
+Every pair is evaluated once and written to both particles equal and opposite,
+so **volume and momentum are conserved to round-off** (verified: net momentum
+3.8 × 10⁻¹⁶ of the momentum carried). The pair loop runs in parallel with
+per-thread accumulators, so this holds without a serial bottleneck.
+
+**Verification** (`make validate`, same analytical solutions as §4.3):
+
+| Check | Result | Criterion |
+| --- | --- | --- |
+| Ritter dry-bed | relative L2 **3.98 %**, h(dam) error 2.75 %, front lags (never leads) | < 8 %, < 5 % |
+| Stoker wet-bed | relative L2 **3.87 %**, shock within 0.1 particle spacings | < 8 %, < 3 spacings |
+| Volume and momentum | 0 and 3.8 × 10⁻¹⁶ | < 10⁻¹², < 10⁻¹⁰ |
+| Lake at rest, sinusoidal bed | spurious Froude **1.1 × 10⁻³** | < 10⁻² |
+| Particle refinement | 6.9 % → 5.1 % → 4.0 % → 3.5 %, order 0.33 | monotone |
+
+The thresholds are looser than FloodGuard-SWE's because SPH recovers depth by
+kernel smoothing, and they were fixed before the checks were wired into the
+gate. Three limitations are stated rather than hidden:
+
+1. **Not exactly well-balanced.** The kernel depth gradient and the DEM bed
+   gradient are discretised differently; the residual is measured above. This is
+   why FloodGuard-SWE, not SPH, drives the KPI cards.
+2. **Free-surface truncation.** Within one smoothing length of a wet/dry edge
+   the kernel sum under-counts depth, so SPH fronts lag and SPH extents are
+   slightly smaller at the same threshold.
+3. **Slow convergence.** At a fixed h/Δx the smoothing error does not vanish
+   with spacing alone (observed order 0.33).
+
+It is **not** a 3D WCSPH solve of the breach near field — that is what PySPH or
+DualSPHysics would add, and their case decks are generated separately. Every
+output reads `FloodGuard-SPH (depth-integrated SWE-SPH)`; a request for PySPH on
+a machine without it runs this engine and says so.
+
+### 4.6 Comparison metrics
+
+Both engines run on the **same grid, the same bed, the same breach hydrograph**,
+so the comparison isolates the numerics. `floodguard/compare/metrics.py`
+computes, from the per-engine rasters on disk: every KPI side by side with a
+signed difference; the Critical Success Index CSI = TP/(TP+FP+FN) with POD and
+FAR alongside (CSI alone hides whether extents differ in size or in place); the
+depth RMSE over cells wet in either run; a depth-difference raster for the
+swipe map; and arrival time per named town per engine.
+
+### 4.7 Other engines
 
 | Engine | Status |
 | --- | --- |

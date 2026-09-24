@@ -97,6 +97,35 @@ def build_scenario(request: SimulationRequest):
     if request.engines:
         scenario.engines = request.engines
 
+    if request.dem_upload_id:
+        from app.api.uploads import load_upload, upload_file_path
+        from floodguard.data.uploads import dem_covers
+
+        meta = load_upload(request.dem_upload_id)
+        if meta["kind"] != "dem":
+            raise HTTPException(status_code=422, detail="dem_upload_id is not a DEM upload")
+        if not dem_covers(meta, scenario.dam.lon, scenario.dam.lat):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"the uploaded DEM ({meta['original_filename']}) does not contain the dam "
+                    f"at {scenario.dam.lon:.4f}, {scenario.dam.lat:.4f}"
+                ),
+            )
+        scenario.dem.local_path = str(upload_file_path(request.dem_upload_id))
+        # A different DEM is a different model: keep its processed files apart.
+        scenario.id = f"{scenario.id}__dem_{request.dem_upload_id}"
+
+    if request.hydrograph_upload_id:
+        from app.api.uploads import load_upload, upload_file_path
+
+        meta = load_upload(request.hydrograph_upload_id)
+        if meta["kind"] != "hydrograph":
+            raise HTTPException(
+                status_code=422, detail="hydrograph_upload_id is not a hydrograph upload"
+            )
+        scenario.inflow_hydrograph_csv = str(upload_file_path(request.hydrograph_upload_id))
+
     # Re-validate: the overrides above can make a physically impossible request.
     try:
         scenario = Scenario.model_validate(scenario.model_dump())

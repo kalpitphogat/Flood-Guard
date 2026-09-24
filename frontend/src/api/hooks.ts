@@ -18,6 +18,16 @@ import type {
   SimulationRequest,
   TownResult,
   BreachComparison,
+  AoiStats,
+  FramesResponse,
+  LegendBin,
+  MapLayer,
+  RunListing,
+  Scene3DMeta,
+  ShareCreated,
+  ShareResolved,
+  UploadKind,
+  UploadMeta,
 } from '../types/api'
 
 export function useEngines() {
@@ -197,6 +207,113 @@ export function useCrossSection(runId: string | null, location: string | null) {
         `/api/results/${runId}/cross-section?location=${encodeURIComponent(location!)}`,
       ),
     enabled: !!runId && !!location,
+    retry: false,
+  })
+}
+
+// --- runs, frames, sharing, uploads, 3D, AOI ------------------------------------
+
+export function useRuns() {
+  return useQuery({
+    queryKey: ['runs'],
+    queryFn: () => api<RunListing[]>('/api/runs'),
+    staleTime: 15_000,
+  })
+}
+
+export function useFrames(runId: string | null) {
+  return useQuery({
+    queryKey: ['result', runId, 'frames'],
+    queryFn: () => api<FramesResponse>(`/api/results/${runId}/frames`),
+    enabled: !!runId,
+    retry: false,
+  })
+}
+
+export function useLegend(runId: string | null, layer: MapLayer) {
+  return useQuery({
+    queryKey: ['result', runId, 'legend', layer],
+    queryFn: () => api<{ layer: string; bins: LegendBin[] }>(
+      `/api/results/${runId}/legend?layer=${layer}`,
+    ),
+    enabled: !!runId,
+    staleTime: Infinity,
+    retry: false,
+  })
+}
+
+export function useTownsByEngine(runId: string | null) {
+  return useQuery({
+    queryKey: ['result', runId, 'towns-by-engine'],
+    queryFn: () => api<Record<string, TownResult[]>>(`/api/results/${runId}/towns-by-engine`),
+    enabled: !!runId,
+    retry: false,
+  })
+}
+
+export function useCreateShare() {
+  return useMutation({
+    mutationFn: ({ runId, view }: { runId: string; view: Record<string, unknown> }) =>
+      api<ShareCreated>(`/api/results/${runId}/share`, {
+        method: 'POST',
+        body: JSON.stringify({ view }),
+      }),
+  })
+}
+
+export function useResolveShare(code: string | undefined) {
+  return useQuery({
+    queryKey: ['share', code],
+    queryFn: () => api<ShareResolved>(`/api/share/${code}`),
+    enabled: !!code,
+    retry: false,
+  })
+}
+
+export function useUploads(kind?: UploadKind) {
+  return useQuery({
+    queryKey: ['uploads', kind ?? 'all'],
+    queryFn: () => api<UploadMeta[]>(`/api/uploads${kind ? `?kind=${kind}` : ''}`),
+  })
+}
+
+/** Multipart upload. The JSON helper cannot be used: it forces a JSON content type. */
+export function useUploadFile() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ kind, file }: { kind: UploadKind; file: File }) => {
+      const body = new FormData()
+      body.append('file', file)
+      const base = import.meta.env.VITE_API_BASE ?? ''
+      const res = await fetch(`${base}/api/uploads/${kind}`, { method: 'POST', body })
+      const payload = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        const detail = payload?.detail
+        const issues: string[] = Array.isArray(detail?.issues) ? detail.issues : []
+        const message =
+          typeof detail === 'string' ? detail : detail?.message ?? res.statusText
+        throw Object.assign(new Error(message), { issues })
+      }
+      return payload as UploadMeta
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['uploads'] }),
+  })
+}
+
+export function useScene3D(runId: string | null) {
+  return useQuery({
+    queryKey: ['result', runId, '3d-meta'],
+    queryFn: () => api<Scene3DMeta>(`/api/results/${runId}/3d/meta`),
+    enabled: !!runId,
+    retry: false,
+  })
+}
+
+export function useAoiStats(runId: string | null, uploadId: string | null) {
+  return useQuery({
+    queryKey: ['result', runId, 'aoi', uploadId],
+    queryFn: () => api<AoiStats>(`/api/results/${runId}/aoi-stats?upload_id=${uploadId}`),
+    enabled: !!runId && !!uploadId,
     retry: false,
   })
 }

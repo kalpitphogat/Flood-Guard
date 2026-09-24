@@ -80,6 +80,13 @@ solver:
     agriculture: 0.050
     bare: 0.025
   second_order: true
+  # Second engine, FloodGuard-SPH (depth-integrated). Unset keys use the
+  # defaults in floodguard/engines/sph_swe.py. h_max_cells is the main cost
+  # control; max_runtime_minutes stops a runaway run and labels it truncated.
+  sph:
+    target_particles: 120000
+    h_max_cells: 1.5
+    max_runtime_minutes: 120
 
 dem:
   sources: [copernicus_s3, planetary_computer, opentopography]
@@ -105,7 +112,7 @@ towns:
     population: 228832
     population_source: "Census of India 2011"
 
-engines: [swe_fv]
+engines: [swe_fv, sph_swe]
 
 notes:
   - >

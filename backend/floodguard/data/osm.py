@@ -28,8 +28,17 @@ log = logging.getLogger(__name__)
 
 OVERPASS_ENDPOINTS = (
     "https://overpass-api.de/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
 )
+
+#: overpass-api.de answers 406 Not Acceptable to requests that do not identify
+#: themselves — which includes the python-requests default User-Agent. Its
+#: usage policy asks clients to name themselves, so we do.
+OVERPASS_HEADERS = {
+    "User-Agent": "FloodGuard-India/0.1 (SIH PS 26161 dam-break research prototype)",
+    "Accept": "application/json",
+}
 
 OSM_LICENCE = "© OpenStreetMap contributors, ODbL 1.0 (https://www.openstreetmap.org/copyright)"
 
@@ -126,7 +135,9 @@ def _overpass_request(query: str, timeout_s: int = 300) -> dict[str, Any]:
     for endpoint in OVERPASS_ENDPOINTS:
         for attempt in range(3):
             try:
-                resp = requests.post(endpoint, data={"data": query}, timeout=timeout_s)
+                resp = requests.post(
+                    endpoint, data={"data": query}, headers=OVERPASS_HEADERS, timeout=timeout_s
+                )
                 if resp.status_code in (429, 504):
                     wait = 5 * (attempt + 1)
                     log.warning("%s returned %s; waiting %ss", endpoint, resp.status_code, wait)

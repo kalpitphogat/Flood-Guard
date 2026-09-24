@@ -116,6 +116,30 @@ def probe_swe_fv() -> EngineStatus:
     )
 
 
+def probe_sph_swe() -> EngineStatus:
+    """Our own depth-integrated SPH solver: the second, independent engine."""
+    numpy_version = _module_version("numpy")
+    numba_version = _module_version("numba")
+    available = numpy_version is not None and numba_version is not None
+    return EngineStatus(
+        id="sph_swe",
+        display_name="FloodGuard-SPH (depth-integrated SWE-SPH)",
+        kind=EngineKind.NATIVE if available else EngineKind.UNAVAILABLE,
+        available=available,
+        is_real_solver=True,
+        version="0.1.0",
+        detail=(
+            "Lagrangian meshless SPH of the shallow-water equations; independent numerics "
+            "from FloodGuard-SWE, verified against Ritter and Stoker. Depth-averaged: it is "
+            "not a 3D WCSPH solve of the breach near field."
+            if available
+            else "Needs numba; a pure-Python particle loop is too slow to be useful."
+        ),
+        substitute_id=None if available else "swe_fv",
+        evidence={"numpy": numpy_version, "numba": numba_version},
+    )
+
+
 def probe_anuga() -> EngineStatus:
     """ANUGA -- independent, published, validated 2D SWE solver (conda-forge)."""
     version = _module_version("anuga")
@@ -181,9 +205,10 @@ def probe_pysph() -> EngineStatus:
         detail=(
             "Near-field 3D breach collapse; coupled to the 2D engine at a transfer section."
             if version
-            else "Install with `pip install pysph` (needs a C compiler)."
+            else "Install with `pip install pysph` (needs a C compiler). Requests for it "
+                 "run FloodGuard-SPH (depth-integrated) instead, labelled as such."
         ),
-        substitute_id=None if version else "swe_fv",
+        substitute_id=None if version else "sph_swe",
         evidence={"module": "pysph"},
     )
 
@@ -208,13 +233,14 @@ def probe_dualsphysics() -> EngineStatus:
             else "GenCase and/or DualSPHysics binaries not found. FloodGuard still writes a "
                  "valid CaseDef.xml as a downloadable artefact."
         ),
-        substitute_id=None if available else "sph_pysph",
+        substitute_id=None if available else "sph_swe",
         evidence={"DualSPHysics": dsph, "GenCase": gencase},
     )
 
 
 _PROBES = (
     probe_swe_fv,
+    probe_sph_swe,
     probe_anuga,
     probe_delft3d,
     probe_pysph,

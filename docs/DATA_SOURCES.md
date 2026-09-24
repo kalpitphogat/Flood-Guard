@@ -258,3 +258,30 @@ Every output — GeoTIFF, Shapefile, GeoJSON, KML, CSV, PDF — carries a
 provenance block naming the DEM source and resolution, the dam parameters and
 their citations, the engine and its version, the solver settings, the git
 commit and a UTC timestamp.
+
+
+---
+
+## ESA WorldCover 10 m (land cover)
+
+| | |
+| --- | --- |
+| **Used for** | Manning's n field (Chow 1959 mid-range per class) and the cropland-in-flood metric |
+| **URL** | `https://esa-worldcover.s3.eu-central-1.amazonaws.com/v200/2021/map/ESA_WorldCover_10m_2021_v200_<TILE>_Map.tif` — keyless, public |
+| **Tiling** | 3 x 3 degree COGs named by the south-west corner (e.g. `N30E078`) |
+| **Access** | Windowed HTTP range reads over `/vsicurl/`; only the corridor is read, never whole tiles |
+| **Resampling** | **Mode** onto the DEM grid — a categorical raster is never averaged |
+| **Licence** | CC-BY 4.0. © ESA WorldCover project 2022 / contains modified Copernicus Sentinel data (2021) |
+| **Citation** | Zanaga, D. et al. (2022) ESA WorldCover 10 m 2021 v200. https://doi.org/10.5281/zenodo.7254221 |
+| **Cannot tell you** | Crop type, season, or whether a field is fallow; channel cells narrower than 10 m are classed as their banks (the flow network burns the channel roughness back in) |
+
+Fetched by `floodguard data` unless `--skip-landcover`; written to
+`data/processed/<scenario>/landcover_utm.tif` and recorded in `MANIFEST.json`.
+Without it, Manning's n is uniform and every output says so.
+
+## OpenStreetMap via Overpass — access note
+
+overpass-api.de answers **406 Not Acceptable** to requests without an
+identifying User-Agent (including the python-requests default). FloodGuard now
+sends `FloodGuard-India/0.1 (...)` per the Overpass usage policy, and tries
+three public mirrors in turn.

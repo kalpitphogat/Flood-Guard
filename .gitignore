@@ -4,6 +4,9 @@ data/processed/
 data/MANIFEST.json
 outputs/
 runs/
+data/uploads/
+data/jobs.sqlite*
+data/shares.json
 
 # Reference repos — cloned read-only, never vendored
 reference/

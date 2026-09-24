@@ -10,11 +10,14 @@ generated from this schema, so the Pydantic models are the single contract.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
-from app.api import catalog, health, monitoring, results, simulate
+from app.api import catalog, health, monitoring, results, simulate, uploads, views
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -50,6 +53,8 @@ app.include_router(catalog.router)
 app.include_router(simulate.router)
 app.include_router(results.router)
 app.include_router(monitoring.router)
+app.include_router(uploads.router)
+app.include_router(views.router)
 
 
 @app.on_event("startup")
@@ -67,11 +72,37 @@ def _stop_job_runner() -> None:
     simulate.get_runner().stop()
 
 
-@app.get("/", include_in_schema=False)
-def root() -> dict:
-    return {
-        "name": settings.app_name,
-        "version": settings.version,
-        "docs": "/docs",
-        "health": "/health",
-    }
+# --- the built dashboard -----------------------------------------------------------
+#
+# When `npm run build` has produced frontend/dist, the API serves it too, so the
+# whole system runs as ONE process on ONE port — no Vite dev server, no proxy,
+# nothing else to start at a venue. Client-side routes (/simulation, /s/<code>)
+# fall back to index.html; /api, /ws and /docs are never shadowed.
+FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+
+if (FRONTEND_DIST / "index.html").exists():
+    app.mount(
+        "/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets"
+    )
+
+    @app.get("/{path:path}", include_in_schema=False)
+    def spa(path: str):
+        if path.startswith(("api/", "ws/", "docs", "openapi.json", "redoc")):
+            raise HTTPException(status_code=404)
+        candidate = (FRONTEND_DIST / path).resolve()
+        if path and candidate.is_file() and FRONTEND_DIST in candidate.parents:
+            return FileResponse(candidate)
+        return FileResponse(FRONTEND_DIST / "index.html")
+
+else:
+
+    @app.get("/", include_in_schema=False)
+    def root() -> dict:
+        return {
+            "name": settings.app_name,
+            "version": settings.version,
+            "docs": "/docs",
+            "health": "/health",
+            "dashboard": "not built — run `cd frontend && npm run build`, or use the Vite "
+                         "dev server on :5173",
+        }

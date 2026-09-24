@@ -150,6 +150,50 @@ def _sample_raster_at_points(raster: np.ndarray, transform, gdf) -> np.ndarray:
     return out
 
 
+#: ESA WorldCover class code for cropland.
+WORLDCOVER_CROPLAND = 40
+
+
+def _agriculture(landcover, flooded, cell_area) -> Metric:
+    """Cropland inside the flood extent, from ESA WorldCover on the result grid.
+
+    Measured, not estimated: cells that are both flooded and classified
+    cropland, times the cell area. If the land cover is absent, or does not
+    share the result grid, the metric is not computed — it is never zero.
+    """
+    if landcover is None:
+        return Metric.not_computed(
+            "Agricultural land",
+            "km2",
+            "no land-cover raster was fetched for this scenario (run `floodguard data` "
+            "without --skip-landcover), so cropland inside the flood cannot be measured",
+        )
+    if landcover.shape != flooded.shape:
+        return Metric.not_computed(
+            "Agricultural land",
+            "km2",
+            f"the land-cover grid {landcover.shape} does not match the result grid "
+            f"{flooded.shape}",
+        )
+    cropland = landcover == WORLDCOVER_CROPLAND
+    km2 = float((cropland & flooded).sum() * cell_area / 1e6)
+    return Metric(
+        label="Agricultural land",
+        value=km2,
+        unit="km2",
+        computed=True,
+        assumption=(
+            "ESA WorldCover 2021 cropland class, mode-resampled to the compute grid. "
+            "Area of cropland cells whose maximum depth reached the wet threshold; "
+            "crop type and season are not known."
+        ),
+        detail={
+            "cropland_in_domain_km2": float(cropland.sum() * cell_area / 1e6),
+            "source": "ESA WorldCover 10 m v200 (Zanaga et al. 2022), CC-BY 4.0",
+        },
+    )
+
+
 def analyse(
     depth: np.ndarray,
     velocity: np.ndarray,
@@ -163,6 +207,7 @@ def analyse(
     population_note: str = "",
     towns: list | None = None,
     wet_threshold_m: float = 0.3,
+    landcover: np.ndarray | None = None,
 ) -> ImpactResult:
     """Intersect the inundation with every exposure layer available.
 
@@ -252,11 +297,8 @@ def analyse(
     )
 
     # --- agricultural land ---
-    result.metrics["agriculture"] = Metric.not_computed(
-        "Agricultural land",
-        "km2",
-        "no land-cover raster (ESA WorldCover or Bhuvan LULC) is wired in yet, so "
-        "cropland inside the flood extent cannot be measured",
+    result.metrics["agriculture"] = _agriculture(
+        landcover, flooded, cell_area
     )
 
     # --- bridges ---

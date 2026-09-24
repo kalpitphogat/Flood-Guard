@@ -347,10 +347,33 @@ def run_preprocess(
     warnings.extend(xs_warnings)
 
     # --- 6. Manning's n ---
-    # No land-cover fetcher is wired in yet, so this is an honest uniform field.
-    rough = roughness.uniform(
-        dem.shape, scenario.solver.default_manning_n, scenario.solver.manning_n_overrides
-    )
+    # Mapped from ESA WorldCover when `floodguard data` fetched it onto this
+    # grid; otherwise an explicitly-labelled uniform field. A land-cover raster
+    # on a different grid (an older resolution) is not used, rather than
+    # resampled here behind the user's back.
+    rough = None
+    lc_path = out_dir / "landcover_utm.tif"
+    if lc_path.exists():
+        with rasterio.open(lc_path) as lc_src:
+            if (lc_src.height, lc_src.width) == dem.shape and lc_src.transform == transform:
+                from floodguard.preprocess.roughness import ESA_WORLDCOVER_MAP
+
+                rough = roughness.from_landcover(
+                    lc_src.read(1),
+                    ESA_WORLDCOVER_MAP,
+                    scenario.solver.default_manning_n,
+                    scenario.solver.manning_n_overrides,
+                )
+            else:
+                warnings.append(
+                    "The land-cover raster is on a different grid from the DEM (probably an "
+                    "older resolution), so it was not used and Manning's n is uniform. "
+                    "Re-run `floodguard data` at this resolution."
+                )
+    if rough is None:
+        rough = roughness.uniform(
+            dem.shape, scenario.solver.default_manning_n, scenario.solver.manning_n_overrides
+        )
     channel = conditioned.accumulation > max(100.0, 0.001 * conditioned.accumulation.max())
     rough = roughness.burn_channel(rough, channel)
 

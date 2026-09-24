@@ -7,8 +7,8 @@
 **Smart India Hackathon — Problem Statement 26161**
 
 [![SIH](https://img.shields.io/badge/SIH-PS%2026161-FF6B35?style=for-the-badge)](SPEC.md)
-[![Verification](https://img.shields.io/badge/solver%20verification-7%2F7%20passing-2EA043?style=for-the-badge)](docs/validation/summary.md)
-[![Tests](https://img.shields.io/badge/tests-115%20passing-2EA043?style=for-the-badge)](backend/tests)
+[![Verification](https://img.shields.io/badge/verification-12%20checks%2C%202%20engines-2EA043?style=for-the-badge)](docs/validation/summary.md)
+[![Tests](https://img.shields.io/badge/tests-165%20backend%20%2B%2014%20frontend-2EA043?style=for-the-badge)](backend/tests)
 
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
@@ -56,12 +56,12 @@ it honestly stands today.
 | # | Deliverable | Status |
 | :--: | :-- | :-- |
 | 1 | Generalized framework simulating dam break / river blockage from real DEM + hydrological data | ✅ **Done** |
-| 2 | **Two independent hydrodynamic engines** with a quantitative comparison | 🟡 **One engine verified.** Second in progress — see [Roadmap](#-roadmap) |
+| 2 | **Two independent hydrodynamic engines** with a quantitative comparison | ✅ **FloodGuard-SWE** (finite volume) + **FloodGuard-SPH** (particles), both verified; comparison table, CSI/POD/FAR, difference raster, swipe map |
 | 3 | Inundation scenarios from swappable input datasets — any river, any dam | ✅ **Done** — adding a dam is a YAML file |
-| 4 | Web dashboard for input and output, handling large rasters | ✅ **Done** — React + MapLibre |
+| 4 | Web dashboard for input and output, handling large rasters | ✅ **Done** — tiled layers, animated frames, swipe comparison, 3D view, uploads, Demo Mode, share links |
 | 5 | Exports to `.shp`, `.kml`, `.geojson`, `.tif` + PDF report | ✅ **Done** — plus COG and KMZ |
 | 6 | Near-real-time flood mapping via Google Earth Engine + Sentinel-1 | 🟡 **Built, never executed** — needs credentials |
-| 7 | HADR loss-and-damage analysis inside the inundation polygon | 🟡 **Built, awaiting exposure layers** |
+| 7 | HADR loss-and-damage analysis inside the inundation polygon | ✅ **Built, layers fetched for Tehri** — OSM (24k buildings, 20k roads, 111 health, 90 education), WorldPop, ESA WorldCover cropland |
 
 > **Why the honest status column?** Because rule #1 of this project is that
 > nothing claims to be more finished than it is — including this README. A
@@ -102,7 +102,7 @@ flowchart TB
     subgraph ENG["🌊 PHASE 4 · HYDRODYNAMIC ENGINES — one contract"]
         direction LR
         SWE["<b>FloodGuard-SWE</b> ✅<br/>Godunov FV · MUSCL-minmod<br/>HLLC · Audusse well-balanced<br/>numba-jitted<br/><b>verified 7/7</b>"]
-        ALT["<b>Cross-check engine</b> 🟡<br/>ANUGA / PySPH<br/><i>populates the<br/>comparison table</i>"]
+        ALT["<b>FloodGuard-SPH</b> ✅<br/>depth-integrated SPH<br/>Wendland C2 · Monaghan AV<br/>exact momentum conservation<br/><b>verified 5/5</b>"]
         ADP["<b>Adapters</b> 📦<br/>Delft3D FM deck<br/>DualSPHysics CaseDef<br/><i>run if binaries exist</i>"]
     end
 
@@ -188,6 +188,28 @@ Plots and full error tables: **[`docs/validation/`](docs/validation/)**.
 > gradient where depth reaches zero. What matters is the direction — the
 > modelled flood must never arrive *earlier* than physics allows.
 
+### ➕ Two engines that share no numerics
+
+The problem statement asks for SPH *and* a Delft3D-class solver, compared.
+**FloodGuard-SPH** solves the same shallow-water equations as particles: no
+mesh, no Riemann solver, depth by kernel summation, shocks by artificial
+viscosity. Both run on the same grid, bed and breach hydrograph, so their
+differences are numerical, and the dashboard shows them: a side-by-side table
+with signed differences, CSI/POD/FAR of the extents, depth RMSE, per-town
+arrival by engine, a swipe map and a difference raster.
+
+| SPH check | Result |
+| :-- | :-- |
+| Ritter dry-bed | relative L2 **3.98 %**, front never leads |
+| Stoker wet-bed | relative L2 **3.87 %**, shock within 0.1 spacings |
+| Volume / momentum | **0** / **3.8e-16** — exact by construction |
+| Lake at rest | spurious Froude **1.1e-3** (measured, not exact — stated) |
+| Refinement | error falls monotonically, order 0.33 |
+
+It is labelled `FloodGuard-SPH (depth-integrated SWE-SPH)` everywhere — never
+PySPH, never DualSPHysics — because it is not a 3D solve of the breach near
+field. See [METHODOLOGY §4.5](docs/METHODOLOGY.md).
+
 ### 2️⃣ Nothing is labelled as something it is not
 
 `GET /api/health/engines` probes the machine. When Delft3D binaries are absent,
@@ -231,19 +253,24 @@ cd frontend && npm install && cd ..
 Verify the install **in this order**:
 
 ```bash
-python -m floodguard.cli engines      # honest engine availability table
-python -m pytest backend/tests -q     # 115 passed
-python -m floodguard.cli validate     # 7/7 in under a minute
-python -m floodguard.cli demo --check # 6-item preflight
+python -m floodguard.cli engines      # honest engine availability table (6 engines)
+make test                             # backend pytest + frontend Vitest
+python -m floodguard.cli validate     # 7 FV + 5 SPH checks
+python -m floodguard.cli demo --check # preflight, incl. "two-engine comparison"
 ```
 
 Then run something real:
 
 ```bash
-make data      SCENARIO=tehri_bhagirathi    # fetch real Copernicus DEM
-make simulate  SCENARIO=tehri_bhagirathi    # headless end-to-end
-make serve-backend & make serve-frontend    # -> http://localhost:5173
+make data           SCENARIO=tehri_bhagirathi   # DEM, WorldPop, OSM, ESA WorldCover
+make simulate-both  SCENARIO=tehri_bhagirathi   # both engines, 90 m
+make serve                                      # ONE process -> http://localhost:8000
 ```
+
+`make serve` builds the dashboard and lets the API serve it, so a venue needs
+one process on one port. `docker compose up --build` does the same in a
+container (see `Dockerfile`). For development, `make serve-backend` +
+`make serve-frontend` still gives hot reload on :5173.
 
 <details>
 <summary><b>conda path, if you want ANUGA as the cross-check engine</b></summary>
@@ -293,13 +320,17 @@ Optional credentials, both absent on the development machine:
 | 🟢 Dam catalog | **Real.** 30 dams, CWC NRLD-2019, cited per field to PDF page and PIC code |
 | 🟢 GIS exports | **Real.** COG, zipped SHP, GeoJSON, KML, KMZ, CSV |
 | 🟢 PDF report | **Real.** 6 pages, provenance on every page |
+| 🟢 **FloodGuard-SPH** second engine | **Real.** Verified 5/5; comparison populates itself when both engines run |
+| 🟢 Dashboard | **Real.** Layers (depth, velocity, arrival, AIDR hazard, engine difference), animated frames, swipe map, 3D terrain, uploads, Demo Mode, share links |
+| 🟢 Uploads | **Real.** DEM GeoTIFF / hydrograph CSV / AOI (GeoJSON, KML, zipped SHP), validated for CRS, extent and units; refused files list every reason |
+| 🟢 Land cover | **Real.** ESA WorldCover 10 m → mapped Manning's n + cropland-in-flood metric |
 | 📦 **Delft3D FM** | Deck **generated**; solver runs only if `dflowfm` is on PATH |
 | 📦 **DualSPHysics** | `CaseDef.xml` **generated**; needs GenCase + DualSPHysics binaries |
 | 🟡 **ANUGA** | conda-forge only; reported unavailable otherwise |
-| 🟡 **PySPH** | Needs a C compiler; case definition present and reviewable |
+| 🟡 **PySPH** | Needs a C compiler; a request for it runs FloodGuard-SPH and the badge says so |
 | 🟡 **GEE monitoring** | Returns 503 with a named reason without `GOOGLE_APPLICATION_CREDENTIALS` |
-| 🟡 Exposure analysis | Real code; reports "not computed" unless OSM/WorldPop were fetched |
-| ⬜ 3D view | **Not built.** The tab says so rather than showing a placeholder |
+| 🟢 Exposure analysis | Real; layers fetched for Tehri. "Not computed" only where a layer is missing |
+| 🟢 3D view | deck.gl TerrainLayer over the run's own bed, water surface draped, animates with the frames |
 
 > The Delft3D deck is a deliverable in its own right: a complete UGRID `_net.nc`,
 > `.mdu`, boundary `.pli` and `.bc` carrying the breach hydrograph, and a DIMR
@@ -370,7 +401,7 @@ floodguard breach     --scenario <yaml>             # or --validate for Teton/Ba
 floodguard simulate   --scenario <yaml> [--resolution M] [--duration H] [--engines a,b]
 floodguard impact     [--run <id>]
 floodguard report     [--run <id>]                  # PDF
-floodguard validate   [--quick]                     # THE GATE - 7/7 required
+floodguard validate   [--quick]                     # THE GATE - FV 7 + SPH 5 checks
 floodguard demo       [--check]
 ```
 
@@ -381,7 +412,10 @@ floodguard demo       [--check]
 | `make preprocess` | DEM conditioning, corridor, reservoir curve |
 | `make validate` | The seven verification checks → `docs/validation/` |
 | `make simulate` | Headless end-to-end run |
-| `make test` | 115 tests |
+| `make test` | backend pytest + frontend Vitest |
+| `make simulate-both` | Both engines on SCENARIO at 90 m |
+| `make serve` | Build the dashboard and serve API + UI on :8000 |
+| `make profile-sph` | Short SPH-only run with particle diagnostics |
 
 Targets for unimplemented phases **exit non-zero with a message naming the
 phase**. They never print a fabricated result.
@@ -395,30 +429,31 @@ phase**. They never print a fabricated result.
 
 ## 🧭 Roadmap
 
-What is left, in the order it should be done.
+**P0**
 
-**P0 — the visible gaps**
+- [x] **Second engine** → FloodGuard-SPH; comparison table, CSI, difference raster, swipe map
+- [x] **Exposure layers** fetched for Tehri (OSM needed an identifying User-Agent — fixed)
+- [ ] **One 30 m publication run** — `make simulate-both` with `--resolution 30`, on a server
 
-- [ ] **Second engine** → populates the comparison table (deliverable #2). ANUGA via conda-forge is the cheaper win and gives an *independent published solver* as the cross-check.
-- [ ] **Run the exposure layers** — one command turns six "not computed" cards into real numbers.
-- [ ] **One 30 m publication run.** Both existing runs are 90 m / 120 m and short.
+**P1 — all built**
 
-**P1 — spec features not yet built**
+- [x] `POST /api/results/{id}/share` → `/s/<code>` short link that restores the view
+- [x] Upload endpoints (DEM / hydrograph / AOI) with CRS, extent and unit validation + panel
+- [x] Demo Mode toggle — loads a completed run from disk
+- [x] Comparison **swipe map**
+- [x] **3D view** — deck.gl TerrainLayer + water surface
+- [x] Time-indexed tiles — the raster animates from stored solver frames
+- [x] Any catalog dam from the GUI (DEM fetched automatically on first run)
 
-- [ ] `POST /api/results/{id}/share` → short link
-- [ ] Upload endpoints (DEM GeoTIFF / hydrograph CSV / AOI) with CRS + extent validation
-- [ ] "Upload Custom Data" panel · "Demo Mode" toggle
-- [ ] Comparison **swipe map** (table only today)
-- [ ] **3D view** — deck.gl TerrainLayer + water surface
-- [ ] Time-indexed tiles so the raster animates
+**P2**
 
-**P2 — quality**
-
-- [ ] Frontend tests (Vitest) — at minimum, assert a `null` KPI renders `—` and never `0`
-- [ ] ESA WorldCover → spatially varying Manning n + agricultural-area metric
-- [ ] Test `docker-compose.yml` (written, never executed)
-- [ ] Add Idukki to the dam catalog (known gap, recorded in catalog metadata)
-- [ ] Malpasset 1959 benchmark
+- [x] Frontend tests (Vitest) — null renders `—`, never `0`
+- [x] ESA WorldCover → mapped Manning's n + agricultural-area metric
+- [x] Docker: single multi-stage image (written; not yet built on a Docker host)
+- [ ] Idukki in the catalog — needs the NRLD Kerala sheet transcribed with page citations
+- [ ] Malpasset 1959 benchmark — needs the digitised pre-failure DEM
+- [ ] GEE executed against real Sentinel-1 — needs credentials
+- [ ] SPH performance on the full 6 h Tehri run — see [`docs/HANDOFF.md`](docs/HANDOFF.md)
 
 ---
 
@@ -432,6 +467,7 @@ What is left, in the order it should be done.
 | **[`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md)** | Every dataset, URL, licence, and what each one **cannot** tell you |
 | **[`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md)** | Five-minute walkthrough + the three questions judges ask |
 | **[`docs/validation/summary.md`](docs/validation/summary.md)** | The verification report, with plots |
+| **[`docs/HANDOFF.md`](docs/HANDOFF.md)** | What changed in this round, what is untested, and exactly what to run |
 
 ---
 
@@ -443,8 +479,9 @@ in `data/MANIFEST.json` — URL, SHA256, size, licence and fetch time per file.
 Third-party solvers are used within their licences. **DualSPHysics (LGPL-2.1)**
 and **Delft3D (AGPL/GPL/LGPL/BSD)** are invoked as external processes or read
 only for their file formats — **no source from either is copied into this
-repository**. **ANUGA (Apache-2.0)** and **PySPH (BSD/MIT)** are installed
-dependencies.
+repository**. **ANUGA (Apache-2.0)** and **PySPH (BSD/MIT)** are optional
+dependencies. **ESA WorldCover** is CC-BY 4.0 and is attributed in every raster
+tag and in the manifest.
 
 ---
 

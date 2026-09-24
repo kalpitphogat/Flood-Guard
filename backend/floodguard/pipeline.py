@@ -99,6 +99,7 @@ class SimulationResult:
     exported: list[exports.ExportResult] = field(default_factory=list)
     hazard_stats: dict[str, Any] = field(default_factory=dict)
     town_results: list[dict[str, Any]] = field(default_factory=list)
+    towns_by_engine: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     impact: dict[str, Any] | None = None
     runtime_s: float = 0.0
     warnings: list[str] = field(default_factory=list)
@@ -180,6 +181,9 @@ class SimulationResult:
             "run_id": self.run_id,
             "out_dir": str(self.out_dir),
             "runtime_s": self.runtime_s,
+            "resolution_m": float(self.preprocess.cell_size_m),
+            "crs": str(self.preprocess.crs),
+            "completed_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "breach": {
                 "used": self.breach_used.to_dict(),
                 "predictions": [p.to_dict() for p in self.breach_predictions],
@@ -195,6 +199,7 @@ class SimulationResult:
             "engines": [r.to_dict() for r in self.engine_runs],
             "hazard": self.hazard_stats,
             "towns": self.town_results,
+            "towns_by_engine": self.towns_by_engine,
             "impact": self.impact,
             "exports": [e.to_dict() for e in self.exported],
             "warnings": self.warnings,
@@ -211,14 +216,26 @@ def _engine_classes() -> dict[str, type]:
     from floodguard.engines.delft3d_adapter import Delft3DAdapter
     from floodguard.engines.dualsphysics_adapter import DualSPHysicsAdapter
     from floodguard.engines.sph_pysph import PySPHEngine
+    from floodguard.engines.sph_swe import SmoothedParticleSWE
 
     return {
         "swe_fv": ShallowWaterFV,
+        "sph_swe": SmoothedParticleSWE,
         "anuga": AnugaEngine,
         "delft3d": Delft3DAdapter,
         "sph_pysph": PySPHEngine,
         "dualsphysics": DualSPHysicsAdapter,
     }
+
+
+def _make_engine(engine_id: str, scenario: Scenario):
+    """Instantiate an engine, passing the scenario's settings where it has any."""
+    cls = _engine_classes()[engine_id]
+    if engine_id == "sph_swe":
+        from floodguard.engines.sph_swe import SPHSettings
+
+        return cls(SPHSettings.from_scenario(scenario.solver.sph))
+    return cls()
 
 
 #: Engines whose input deck is a deliverable in its own right, generated
@@ -497,6 +514,86 @@ def _town_table(
     return rows
 
 
+def ensure_inputs(
+    scenario: Scenario, data_dir: Path, progress: ProgressFn = _noop
+) -> list[str]:
+    """Make sure a DEM mosaic exists at the resolution this scenario asks for.
+
+    Two silent failures lived here. A dam picked from the catalog in the
+    dashboard had never had `floodguard data` run for it, so the job died with
+    "DEM not found". And a DEM mosaicked at 90 m was reused for a 30 m request
+    without a word, so the run reported one resolution and computed another.
+
+    Both now resolve the same way: (re)acquire. Tiles are content-addressed in
+    the cache, so a re-mosaic at a new resolution downloads nothing.
+    """
+    notes: list[str] = []
+    dem_path = data_dir / "processed" / scenario.id / "dem_utm.tif"
+    wanted = float(scenario.domain.resolution_m)
+    reason = ""
+    if not dem_path.exists():
+        reason = "no DEM mosaic exists for this scenario yet"
+    else:
+        import rasterio
+
+        with rasterio.open(dem_path) as src:
+            have = float(abs(src.transform.a))
+        if abs(have - wanted) > 0.01 * wanted:
+            reason = f"the cached mosaic is at {have:.0f} m but {wanted:.0f} m was requested"
+
+    if reason:
+        from floodguard.data.acquire import acquire
+
+        progress(fraction=0.01, phase="data", message=f"acquiring inputs: {reason}")
+        log.info("acquiring inputs for %s: %s", scenario.id, reason)
+        osm_present = (data_dir / "raw" / "osm" / scenario.id).exists()
+        acquire(scenario, data_dir, skip_osm=osm_present)
+        notes.append(f"Inputs were (re)acquired before the run because {reason}.")
+    return notes
+
+
+def load_user_hydrograph(path: str | Path) -> routing.Hydrograph:
+    """A user-supplied outflow hydrograph, as the same object the breach model returns.
+
+    Reservoir level, storage and breach width are not known for a supplied
+    hydrograph, so they are NaN — "not computed" — never back-filled.
+    """
+    from floodguard.data.uploads import read_hydrograph_csv
+
+    parsed = read_hydrograph_csv(Path(path))
+    t = parsed["time_s"]
+    q = parsed["discharge_m3s"]
+    nan = np.full_like(t, np.nan)
+    volume = float(np.trapezoid(q, t))
+    peak_i = int(np.argmax(q))
+    return routing.Hydrograph(
+        time_s=t,
+        discharge_m3s=q,
+        water_level_m=nan,
+        storage_m3=nan,
+        breach_width_m=nan,
+        peak_discharge_m3s=float(q[peak_i]),
+        time_to_peak_s=float(t[peak_i]),
+        total_volume_m3=volume,
+        final_level_m=float("nan"),
+        mass_error=0.0,
+        provenance={
+            "breach_model": "user-supplied hydrograph",
+            "source_file": str(path),
+            "sha256": parsed["sha256"],
+            "time_unit_in_file": parsed["time_unit"],
+            "note": (
+                "The inflow boundary is a hydrograph supplied by the user, not the output "
+                "of a breach model. Reservoir level and breach width were not modelled."
+            ),
+        },
+        warnings=[
+            "The breach hydrograph was SUPPLIED by the user, not modelled. The breach "
+            "parameter predictions shown alongside are for reference only."
+        ],
+    )
+
+
 def simulate(
     scenario: Scenario,
     data_dir: Path,
@@ -506,6 +603,7 @@ def simulate(
     engines: list[str] | None = None,
     reuse_preprocess: bool = True,
     export: bool = True,
+    auto_acquire: bool = True,
 ) -> SimulationResult:
     """Run the full pipeline for one scenario."""
     started = time.perf_counter()
@@ -514,6 +612,8 @@ def simulate(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     warnings: list[str] = []
+    if auto_acquire:
+        warnings.extend(ensure_inputs(scenario, data_dir, progress))
 
     # --- Phase 2 ---
     progress(fraction=0.02, phase="preprocess", message="conditioning the DEM")
@@ -530,17 +630,20 @@ def simulate(
     progress(fraction=0.15, phase="breach", message="solving the breach hydrograph")
     used, predictions, spread = breach_params.resolve(scenario)
     crest = scenario.dam.crest_elevation_m or scenario.initial_level_m
-    hydrograph = routing.route(
-        pre.reservoir.curve,
-        used,
-        initial_level_m=scenario.initial_level_m,
-        crest_elevation_m=crest,
-        scenario_type=scenario.scenario_type,
-        shape=scenario.breach.shape,
-        growth=scenario.breach.growth,
-        duration_s=scenario.solver.duration_hours * 3600.0,
-        inflow_m3s=scenario.reservoir.inflow_m3s,
-    )
+    if scenario.inflow_hydrograph_csv:
+        hydrograph = load_user_hydrograph(scenario.inflow_hydrograph_csv)
+    else:
+        hydrograph = routing.route(
+            pre.reservoir.curve,
+            used,
+            initial_level_m=scenario.initial_level_m,
+            crest_elevation_m=crest,
+            scenario_type=scenario.scenario_type,
+            shape=scenario.breach.shape,
+            growth=scenario.breach.growth,
+            duration_s=scenario.solver.duration_hours * 3600.0,
+            inflow_m3s=scenario.reservoir.inflow_m3s,
+        )
     warnings.extend(hydrograph.warnings)
     if spread["width_m"]["spread_ratio"] > 2.0:
         warnings.append(
@@ -608,7 +711,7 @@ def simulate(
                 **extra,
             )
 
-        engine = _engine_classes()[run.actual_id]()
+        engine = _make_engine(run.actual_id, scenario)
         try:
             run.bundle = engine.run(spec, engine_progress)
             warnings.extend(run.bundle.warnings)
@@ -655,6 +758,24 @@ def simulate(
         result.exported = _write_exports(
             out_dir, bundle, pre, provenance, hydrograph, scenario, primary
         )
+        # Per-engine rasters and animation frames. The comparison table, the
+        # swipe map and the time slider all read these; none of them may be
+        # filled from the primary engine's output under another engine's name.
+        for run in result.engine_runs:
+            if run.bundle is None:
+                continue
+            _write_engine_artifacts(out_dir, run, provenance)
+
+    # Per-engine arrival at every named town, so the comparison can say which
+    # engine warns earlier where it matters, not only in aggregate.
+    result.towns_by_engine = {
+        run.actual_id: _town_table(
+            scenario, run.bundle.crs, run.bundle.transform,
+            run.bundle.max_depth.shape, run.bundle,
+        )
+        for run in result.engine_runs
+        if run.bundle is not None
+    }
 
     # --- Phase 6: HADR exposure ---
     progress(fraction=0.93, phase="impact", message="intersecting the exposure layers")
@@ -703,6 +824,18 @@ def _run_impact(
             100.0, "EPSG:4326", 2020, [],
         ).assumption_note()
 
+    landcover = None
+    lc_path = data_dir / "processed" / scenario.id / "landcover_utm.tif"
+    window = bundle.provenance.get("compute_window") or {}
+    if lc_path.exists() and window.get("rows"):
+        import rasterio
+
+        with rasterio.open(lc_path) as src:
+            lc = src.read(1)
+        (r0, r1), (c0, c1) = window["rows"], window["cols"]
+        if tuple(window.get("full_grid", ())) == lc.shape:
+            landcover = lc[r0:r1, c0:c1]
+
     try:
         result = exposure.analyse(
             bundle.max_depth,
@@ -716,6 +849,7 @@ def _run_impact(
             population_note=population_note,
             towns=scenario.towns,
             wet_threshold_m=scenario.solver.wet_threshold_m,
+            landcover=landcover,
         )
     except Exception as exc:  # noqa: BLE001 - impact must not sink the whole run
         log.exception("impact analysis failed")
@@ -731,6 +865,58 @@ def _run_impact(
         json.dumps(payload, indent=2, default=str), encoding="utf-8"
     )
     return payload
+
+
+def pre_bed_cropped(pre: PreprocessResult, bundle: ResultBundle) -> np.ndarray:
+    """The preprocessed DEM cut to the compute window the engine ran on."""
+    window = bundle.provenance.get("compute_window") or {}
+    rows = window.get("rows")
+    cols = window.get("cols")
+    bed = np.where(pre.dem < -1000, np.nan, pre.dem)
+    if rows and cols:
+        bed = bed[rows[0]:rows[1], cols[0]:cols[1]]
+    return bed
+
+
+def _write_engine_artifacts(out_dir: Path, run: EngineRun, provenance: dict[str, Any]) -> None:
+    """Per-engine rasters plus the time-indexed depth frames for the animation.
+
+    Frames are stored one array per key in a compressed .npz, so the tile
+    server can load a single frame without decompressing the whole series.
+    Most of every frame is dry, so compression takes them from hundreds of
+    megabytes to a few.
+    """
+    bundle = run.bundle
+    assert bundle is not None
+    eid = run.actual_id
+    engine_prov = {
+        **provenance,
+        **{k: v for k, v in bundle.provenance.items() if isinstance(v, (str, int, float, bool))},
+        "engine": bundle.display_name,
+        "engine_id": eid,
+    }
+    for name, array, desc in (
+        ("max_depth", bundle.max_depth, "maximum water depth, m"),
+        ("max_velocity", bundle.max_velocity, "maximum depth-averaged velocity, m/s"),
+        ("arrival_time", bundle.arrival_time_s, "first time depth exceeded the threshold, s"),
+        ("max_hazard", bundle.max_hazard, "maximum depth x velocity, m2/s"),
+    ):
+        exports.write_cog(
+            out_dir / f"{name}_{eid}.tif",
+            array,
+            bundle.transform,
+            bundle.crs,
+            provenance=engine_prov,
+            description=f"{desc} ({bundle.display_name})",
+        )
+
+    if bundle.frames:
+        arrays = {f"f{i:04d}": d.astype(np.float32) for i, (_, d) in enumerate(bundle.frames)}
+        np.savez_compressed(
+            out_dir / f"frames_{eid}.npz",
+            times_s=np.array([t for t, _ in bundle.frames], dtype=np.float64),
+            **arrays,
+        )
 
 
 def _write_exports(
@@ -783,16 +969,33 @@ def _write_exports(
         written.append(kml)
         written.append(exports.write_kmz(kml.path, out_dir / "inundation.kmz"))
 
+    series = {
+        "discharge_m3s": hydrograph.discharge_m3s,
+        "reservoir_level_m": hydrograph.water_level_m,
+        "breach_width_m": hydrograph.breach_width_m,
+    }
+    # A user-supplied hydrograph has no modelled level or breach width. Those
+    # columns are omitted, not written as zeros or blanks.
+    series = {k: v for k, v in series.items() if np.isfinite(v).any()}
     written.append(
         exports.write_timeseries_csv(
             out_dir / "breach_hydrograph.csv",
             hydrograph.time_s,
-            {
-                "discharge_m3s": hydrograph.discharge_m3s,
-                "reservoir_level_m": hydrograph.water_level_m,
-                "breach_width_m": hydrograph.breach_width_m,
-            },
+            series,
             {**provenance, **hydrograph.provenance},
+        )
+    )
+
+    # The bed the solver actually ran on, cropped to the compute window. The
+    # 3D view drapes the water surface over this, so the two always align.
+    written.append(
+        exports.write_cog(
+            out_dir / "bed.tif",
+            pre_bed_cropped(pre, bundle),
+            bundle.transform,
+            bundle.crs,
+            provenance=provenance,
+            description="conditioned bed elevation on the compute grid, m MSL",
         )
     )
 

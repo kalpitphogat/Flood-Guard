@@ -9,7 +9,7 @@ FRONTEND_DIR:= frontend
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup setup-pip setup-conda data preprocess validate simulate demo test lint clean audit
+.PHONY: help setup setup-pip setup-conda data preprocess validate simulate simulate-both demo test test-backend test-frontend build serve profile-sph lint clean audit
 
 help:  ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n",$$1,$$2}'
@@ -46,8 +46,25 @@ serve-backend:  ## Run the API only
 serve-frontend:  ## Run the Vite dev server only
 	cd $(FRONTEND_DIR) && npm run dev
 
-test:  ## Run the test suite
-	$(PYTHON) -m pytest $(BACKEND_DIR)/tests -v
+test: test-backend test-frontend  ## Run every test suite (backend + frontend)
+
+test-backend:  ## Backend tests (pytest)
+	$(PYTHON) -m pytest $(BACKEND_DIR)/tests -q
+
+test-frontend:  ## Frontend tests (Vitest + Testing Library)
+	cd $(FRONTEND_DIR) && npm test
+
+simulate-both:  ## Run SCENARIO with both engines (FloodGuard-SWE + FloodGuard-SPH) at 90 m
+	$(PYTHON) -m floodguard.cli simulate --scenario data/scenarios/$(SCENARIO).yaml --resolution 90 --engines swe_fv,sph_swe
+
+build:  ## Build the dashboard; the API then serves it itself
+	cd $(FRONTEND_DIR) && npm run build
+
+serve: build  ## ONE process on :8000 — API + built dashboard (the venue setup)
+	cd $(BACKEND_DIR) && $(PYTHON) -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+profile-sph:  ## Short SPH-only run with particle diagnostics (SECONDS=400)
+	$(PYTHON) scripts/profile_sph.py --scenario $(SCENARIO) --seconds $(or $(SECONDS),400)
 
 lint:  ## Ruff + tsc
 	$(PYTHON) -m ruff check $(BACKEND_DIR)

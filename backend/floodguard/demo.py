@@ -116,6 +116,25 @@ def preflight(data_dir: Path) -> list[Check]:
             )
         )
 
+    compared = [
+        d for d in runs
+        if sum(
+            1 for e in json.loads((d / "result.json").read_text(encoding="utf-8"))["engines"]
+            if e.get("summary")
+        ) >= 2
+    ]
+    checks.append(
+        Check(
+            "Two-engine comparison",
+            bool(compared),
+            f"{len(compared)} run(s) with two engine results; newest {compared[-1].name}"
+            if compared else "no run has results from two engines, so the comparison "
+                             "table and swipe map will be empty",
+            "" if compared else "floodguard simulate --scenario data/scenarios/"
+                                "tehri_bhagirathi.yaml --resolution 90 --engines swe_fv,sph_swe",
+        )
+    )
+
     frontend_deps = (REPO_ROOT / "frontend" / "node_modules").exists()
     checks.append(
         Check(

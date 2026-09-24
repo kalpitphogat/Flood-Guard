@@ -114,6 +114,7 @@ def acquire(
     *,
     skip_population: bool = False,
     skip_osm: bool = False,
+    skip_landcover: bool = False,
     mosaic: bool = True,
 ) -> AcquisitionResult:
     """Fetch every layer this scenario needs.
@@ -145,11 +146,23 @@ def acquire(
     log.info("DEM: %d tile(s) from %s", len(result.dem.tiles), result.dem.source)
 
     if mosaic:
-        tile_paths = [
-            cache.path_for(k.key)
-            for k in cache.manifest.entries()
-            if k.key.startswith("dem/") and k.path.endswith(".tif")
-        ]
+        if result.dem.source in ("local_path", "bhuvan"):
+            # A user-supplied DEM must be the ONLY input to the mosaic. Merging
+            # it with cached Copernicus tiles from other scenarios would let a
+            # different product silently win wherever the two overlap.
+            tile_paths = (
+                [result.dem.path]
+                if result.dem.source == "local_path"
+                else sorted((data_dir / "raw" / "dem" / "bhuvan").glob("*.tif"))
+            )
+        else:
+            tile_paths = [
+                cache.path_for(k.key)
+                for k in cache.manifest.entries()
+                if k.key.startswith("dem/")
+                and not k.key.startswith(("dem/local/", "dem/bhuvan/"))
+                and k.path.endswith(".tif")
+            ]
         tile_paths = [p for p in tile_paths if p and p.exists()]
         out = data_dir / "processed" / scenario.id / "dem_utm.tif"
         result.dem_mosaic = dem_mod.mosaic_and_clip(
@@ -172,6 +185,35 @@ def acquire(
             },
         )
         log.info("DEM mosaic: %s", result.dem_mosaic)
+
+        # --- Land cover: optional, degrades to uniform Manning's n ---
+        if skip_landcover:
+            result.skipped["landcover"] = "skipped by request"
+        else:
+            from floodguard.data import landcover as lc_mod
+
+            lc_path = data_dir / "processed" / scenario.id / "landcover_utm.tif"
+            try:
+                summary = lc_mod.fetch_onto_grid(result.dem_mosaic, lc_path)
+                cache.register_local(
+                    f"processed/{scenario.id}/landcover_utm",
+                    lc_path,
+                    source="derived: ESA WorldCover 10 m v200, mode-resampled onto the DEM grid",
+                    licence=lc_mod.WORLDCOVER_LICENCE,
+                    url=summary["tiles"][0],
+                    attributes={
+                        "tiles": summary["tiles"],
+                        "coverage_fraction": summary["coverage_fraction"],
+                        "citation": lc_mod.WORLDCOVER_CITATION,
+                    },
+                )
+                log.info(
+                    "land cover: %d WorldCover tile(s), %.0f%% coverage",
+                    len(summary["tiles"]), 100 * summary["coverage_fraction"],
+                )
+            except Exception as exc:  # noqa: BLE001
+                result.skipped["landcover"] = f"{type(exc).__name__}: {exc}"
+                log.error("land cover unavailable; Manning's n will be uniform: %s", exc)
 
     # --- Population: optional, degrades ---
     if skip_population:

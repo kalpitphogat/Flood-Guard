@@ -219,8 +219,10 @@ export default function About() {
       <p className="mt-1 text-[13px]">
         Dam attributes from the CWC National Register of Large Dams (NRLD-2019), cited per
         field. Terrain from Copernicus DEM GLO-30 (© DLR / ESA). Exposure layers from
-        OpenStreetMap (ODbL) and WorldPop (CC BY 4.0). ANUGA (Apache-2.0) and PySPH
-        (BSD/MIT) are installed dependencies; DualSPHysics (LGPL-2.1) and Delft3D
+        OpenStreetMap (ODbL) and WorldPop (CC BY 4.0). Land cover from ESA WorldCover
+        10 m v200 (CC BY 4.0; Zanaga et al. 2022). Both hydrodynamic engines,
+        FloodGuard-SWE and FloodGuard-SPH, are original code in this repository. ANUGA
+        (Apache-2.0) and PySPH (BSD/MIT) are optional dependencies; DualSPHysics (LGPL-2.1) and Delft3D
         (AGPL/GPL/LGPL/BSD) are invoked as external processes or read only for their file
         formats, with no source copied into this repository.
       </p>

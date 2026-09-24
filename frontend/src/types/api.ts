@@ -102,6 +102,8 @@ export interface SimulationRequest {
   cfl?: number | null
   wet_threshold_m?: number | null
   manning_n_overrides?: Record<string, number>
+  dem_upload_id?: string | null
+  hydrograph_upload_id?: string | null
 }
 
 export interface BreachPrediction {
@@ -209,7 +211,7 @@ export interface ResultSummary {
   peak_discharge_m3s: number | null
   time_to_peak_min: number | null
   total_volume_mcm: number | null
-  resolution_m: number
+  resolution_m: number | null
   warnings: string[]
   provenance: Record<string, unknown>
 }
@@ -292,3 +294,103 @@ export interface CrossSectionResponse {
   max_depth_m: number | null
   note: string
 }
+
+// --- runs, frames, sharing, uploads, 3D, AOI ------------------------------------
+
+export interface RunListing {
+  run_id: string
+  scenario_id: string | null
+  completed_utc: string
+  resolution_m: number | null
+  engines: Array<{ id: string; display_name: string; ok: boolean }>
+  engine_count: number
+  flooded_area_km2: number | null
+  max_depth_m: number | null
+  has_frames: boolean
+  has_impact: boolean
+}
+
+export interface FramesResponse {
+  run_id: string
+  engines: Record<string, number[]>
+  note: string
+}
+
+export interface ShareCreated {
+  code: string
+  path: string
+  run_id: string
+  view: Record<string, unknown>
+}
+
+export interface ShareResolved {
+  code: string
+  run_id: string
+  view: { layer?: string; engine?: string; frame?: number; tab?: string }
+  created_utc: string
+}
+
+export type UploadKind = 'dem' | 'hydrograph' | 'aoi'
+
+export interface UploadMeta {
+  id: string
+  kind: UploadKind
+  original_filename: string
+  size_bytes: number
+  uploaded_utc: string
+  ok: boolean
+  issues: string[]
+  warnings: string[]
+  sha256?: string
+  // dem
+  crs?: string
+  resolution_m?: number
+  bounds_wgs84?: [number, number, number, number]
+  elevation_min_m?: number
+  elevation_max_m?: number
+  nodata_fraction?: number
+  // hydrograph
+  rows?: number
+  duration_hours?: number
+  peak_discharge_m3s?: number
+  time_to_peak_min?: number
+  volume_mcm?: number
+  // aoi
+  features?: number
+  area_km2?: number
+}
+
+export interface Scene3DMeta {
+  run_id: string
+  bounds: [number, number, number, number]
+  size: [number, number]
+  bed_min_m: number | null
+  bed_max_m: number | null
+  max_depth_m: number | null
+  encoding: 'terrarium'
+  note: string
+}
+
+export interface AoiStats {
+  run_id: string
+  upload_id: string
+  aoi_name: string | null
+  aoi_area_km2: number
+  covered_by_model_km2: number
+  coverage_fraction: number | null
+  flooded_area_km2: number | null
+  flooded_fraction_of_covered?: number
+  max_depth_m: number | null
+  mean_flooded_depth_m?: number | null
+  earliest_arrival_min: number | null
+  reason: string
+}
+
+export interface LegendBin {
+  lower: number | null
+  upper: number | null
+  label: string
+  colour: string
+}
+
+export type MapLayer = 'depth' | 'velocity' | 'arrival' | 'hazard' | 'difference'
