@@ -9,3 +9,138 @@
 /* The hackathon projector is 1366x768. Nothing may require more width. */
 html, body, #root { height: 100%; }
 body { margin: 0; background: #f4f6f9; }
+
+/* ------------------------------------------------------------------------
+ * Dark theme (default; toggled from the header, see src/theme.ts).
+ *
+ * Components are written with light-theme Tailwind classes. Rather than add a
+ * `dark:` twin to every one, this layer re-maps the colour utilities the app
+ * actually uses when <html class="dark">. `.dark .x` outranks `.x`, so light
+ * mode is untouched. Flood-depth legend colours (tailwind `flood.*`, map tiles)
+ * are data colours and are deliberately NOT re-mapped.
+ * ---------------------------------------------------------------------- */
+
+.dark body { background: #0b1220; color: #d5deea; }
+
+/* surfaces */
+.dark .bg-white { background-color: #111a2b; }
+.dark .bg-white\/95 { background-color: rgb(17 26 43 / 0.95); }
+.dark .bg-white\/90 { background-color: rgb(17 26 43 / 0.9); }
+.dark .bg-slate-50 { background-color: #152033; }
+.dark .bg-slate-100 { background-color: #1a2638; }
+.dark .bg-slate-200 { background-color: #223047; }
+.dark .bg-slate-300 { background-color: #2e3d56; }
+.dark .bg-slate-600 { background-color: #475569; }
+.dark .bg-slate-700 { background-color: #334155; }
+.dark .bg-slate-800 { background-color: #2a3a54; }
+.dark .bg-slate-900 { background-color: #1f2d44; }
+.dark .bg-navy { background-color: #0a1628; }
+.dark header.bg-navy { border-bottom: 1px solid #1c2839; }
+.dark footer.bg-navy { border-top: 1px solid #1c2839; }
+
+/* borders */
+.dark .border-slate-50 { border-color: #172235; }
+.dark .border-slate-100 { border-color: #1c2839; }
+.dark .border-slate-200 { border-color: #25344b; }
+.dark .border-slate-300 { border-color: #32435e; }
+.dark .border-slate-400 { border-color: #475a78; }
+
+/* text */
+.dark .text-slate-900 { color: #e6edf6; }
+.dark .text-slate-800 { color: #d5deea; }
+.dark .text-slate-700 { color: #c0cbda; }
+.dark .text-slate-600 { color: #a3b1c4; }
+.dark .text-slate-500 { color: #8b9bb1; }
+.dark .text-slate-400 { color: #718199; }
+.dark .text-slate-300 { color: #56657b; }
+.dark .text-navy { color: #9ed8f5; }
+
+/* status tints: translucent fills, light text */
+.dark .bg-amber-50 { background-color: rgb(245 158 11 / 0.1); }
+.dark .bg-amber-100 { background-color: rgb(245 158 11 / 0.18); }
+.dark .border-amber-200 { border-color: rgb(245 158 11 / 0.35); }
+.dark .border-amber-300 { border-color: rgb(245 158 11 / 0.5); }
+.dark .text-amber-700 { color: #fbbf24; }
+.dark .text-amber-800 { color: #fcd34d; }
+.dark .text-amber-900 { color: #fde68a; }
+
+.dark .bg-rose-50 { background-color: rgb(244 63 94 / 0.1); }
+.dark .bg-rose-100 { background-color: rgb(244 63 94 / 0.18); }
+.dark .border-rose-200 { border-color: rgb(244 63 94 / 0.35); }
+.dark .border-rose-300 { border-color: rgb(244 63 94 / 0.5); }
+.dark .text-rose-700 { color: #fb7185; }
+.dark .text-rose-800 { color: #fda4af; }
+.dark .text-rose-900 { color: #fecdd3; }
+
+.dark .bg-emerald-50 { background-color: rgb(16 185 129 / 0.1); }
+.dark .bg-emerald-100 { background-color: rgb(16 185 129 / 0.18); }
+.dark .border-emerald-200 { border-color: rgb(16 185 129 / 0.35); }
+.dark .border-emerald-300 { border-color: rgb(16 185 129 / 0.5); }
+.dark .text-emerald-600 { color: #34d399; }
+.dark .text-emerald-700 { color: #34d399; }
+.dark .text-emerald-800 { color: #6ee7b7; }
+.dark .text-emerald-900 { color: #a7f3d0; }
+
+.dark .bg-sky-50 { background-color: rgb(14 165 233 / 0.1); }
+.dark .bg-sky-100 { background-color: rgb(14 165 233 / 0.18); }
+.dark .border-sky-200 { border-color: rgb(14 165 233 / 0.35); }
+.dark .text-sky-700 { color: #7dd3fc; }
+.dark .text-sky-800 { color: #bae6fd; }
+.dark .text-sky-900 { color: #e0f2fe; }
+
+/* interaction states */
+.dark .hover\:bg-white:hover,
+.dark .hover\:bg-slate-50:hover { background-color: #1a2638; }
+.dark .hover\:bg-slate-200:hover { background-color: #2a3a54; }
+.dark .hover\:bg-slate-700:hover { background-color: #3b4b66; }
+.dark .hover\:bg-slate-800:hover,
+.dark .hover\:bg-slate-900:hover { background-color: #334560; }
+.dark .hover\:bg-rose-50:hover { background-color: rgb(244 63 94 / 0.15); }
+.dark .hover\:text-slate-700:hover { color: #e6edf6; }
+.dark .disabled\:bg-slate-300:disabled { background-color: #334155; color: #8b9bb1; }
+
+/* native form controls follow color-scheme; give text fields a matching fill */
+.dark input:not([type='checkbox']):not([type='radio']):not([type='range']),
+.dark select,
+.dark textarea {
+  background-color: #0e1626;
+  color: #e6edf6;
+}
+.dark input::placeholder,
+.dark textarea::placeholder { color: #56657b; }
+
+/* third-party widgets */
+.dark .recharts-default-tooltip {
+  background-color: #111a2b !important;
+  border-color: #32435e !important;
+  color: #e6edf6;
+}
+.dark .maplibregl-ctrl-group { background: #111a2b; }
+.dark .maplibregl-ctrl-group button + button { border-top-color: #25344b; }
+.dark .maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: invert(0.9); }
+.dark .maplibregl-ctrl-attrib { background-color: rgb(17 26 43 / 0.75); color: #a3b1c4; }
+.dark .maplibregl-ctrl-attrib a { color: #bae6fd; }
+.dark .maplibregl-popup-content { background: #111a2b; color: #e6edf6; }
+.dark .maplibregl-popup-tip { border-top-color: #111a2b; border-bottom-color: #111a2b; }
+
+/* Recharts: CSS outranks SVG presentation attributes, so axes, grid and the
+   dark series colours are lifted here without touching the chart code. */
+.dark .recharts-cartesian-grid line { stroke: #25344b; }
+.dark .recharts-cartesian-axis-line,
+.dark .recharts-cartesian-axis-tick-line { stroke: #32435e; }
+.dark .recharts-cartesian-axis-tick-value,
+.dark .recharts-label,
+.dark .recharts-text { fill: #8b9bb1; }
+.dark .recharts-legend-item-text { color: #c0cbda !important; }
+.dark .recharts-wrapper [stroke='#0369a1'] { stroke: #38bdf8; }
+.dark .recharts-wrapper [fill='#0369a1'] { fill: #38bdf8; }
+.dark .recharts-wrapper [stroke='#b45309'] { stroke: #f59e0b; }
+.dark .recharts-wrapper [fill='#b45309'] { fill: #f59e0b; }
+.dark .recharts-wrapper [stroke='#c2410c'] { stroke: #fb923c; }
+.dark .recharts-wrapper [fill='#c2410c'] { fill: #fb923c; }
+.dark .recharts-wrapper [stroke='#15803d'] { stroke: #4ade80; }
+.dark .recharts-wrapper [fill='#15803d'] { fill: #4ade80; }
+.dark .recharts-wrapper [stroke='#7c3aed'] { stroke: #a78bfa; }
+.dark .recharts-wrapper [fill='#7c3aed'] { fill: #a78bfa; }
+.dark .recharts-wrapper [fill='#cbd5e1'] { fill: #475569; }
+.dark .recharts-wrapper [stroke='#64748b'] { stroke: #94a3b8; }

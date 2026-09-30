@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>FloodGuard India — Dam Break &amp; Flash Flood Simulation</title>
+    <script>
+      // Apply the stored theme before first paint (dark by default); see src/theme.ts.
+      try {
+        if (localStorage.getItem('floodguard.theme') !== 'light') document.documentElement.classList.add('dark')
+      } catch (e) {
+        document.documentElement.classList.add('dark')
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

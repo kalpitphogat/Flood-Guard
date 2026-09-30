@@ -236,7 +236,11 @@ export function CrossSectionChart({
           </ResponsiveContainer>
           <div className="mt-1 flex items-baseline justify-between text-[10px] text-slate-500">
             <span>
-              chainage {formatNumber((section.data?.chainage_m ?? 0) / 1000, 1)} km downstream
+              chainage{' '}
+              {section.data?.chainage_m != null
+                ? `${formatNumber(section.data.chainage_m / 1000, 1)} km`
+                : NOT_COMPUTED}{' '}
+              downstream
             </span>
             {section.data?.offset_from_path_m != null &&
               section.data.offset_from_path_m > 2000 && (

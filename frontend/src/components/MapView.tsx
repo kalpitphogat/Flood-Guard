@@ -2,6 +2,7 @@ import * as maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useEffect, useRef, useState } from 'react'
 import { useLegend } from '../api/hooks'
+import { useTheme, type Theme } from '../theme'
 import type { MapLayer, ScenarioSummary, TownAlert, TownResult } from '../types/api'
 
 /**
@@ -30,6 +31,18 @@ export const BASEMAP_STYLE: maplibregl.StyleSpecification = {
       attribution: '© OpenStreetMap contributors',
       maxzoom: 19,
     },
+    // Keyless dark street map for the dark theme (same OSM data, CARTO styling).
+    dark: {
+      type: 'raster',
+      tiles: [
+        'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+        'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+        'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+      ],
+      tileSize: 256,
+      attribution: '© OpenStreetMap contributors © CARTO',
+      maxzoom: 19,
+    },
     satellite: {
       type: 'raster',
       tiles: [
@@ -42,8 +55,15 @@ export const BASEMAP_STYLE: maplibregl.StyleSpecification = {
   },
   layers: [
     { id: 'osm', type: 'raster', source: 'osm' },
+    { id: 'dark', type: 'raster', source: 'dark', layout: { visibility: 'none' } },
     { id: 'satellite', type: 'raster', source: 'satellite', layout: { visibility: 'none' } },
   ],
+}
+
+/** Show the street basemap that matches the UI theme (satellite, when on, covers both). */
+export function applyBasemapTheme(map: maplibregl.Map, theme: Theme) {
+  map.setLayoutProperty('osm', 'visibility', theme === 'dark' ? 'none' : 'visible')
+  map.setLayoutProperty('dark', 'visibility', theme === 'dark' ? 'visible' : 'none')
 }
 
 export const LAYER_TITLES: Record<MapLayer, string> = {
@@ -99,6 +119,7 @@ export default function MapView({
   const markersRef = useRef<maplibregl.Marker[]>([])
   const [ready, setReady] = useState(false)
   const [satellite, setSatellite] = useState(false)
+  const theme = useTheme()
 
   // --- create the map once ---
   useEffect(() => {
@@ -128,6 +149,12 @@ export default function MapView({
     if (!map || !ready) return
     map.setLayoutProperty('satellite', 'visibility', satellite ? 'visible' : 'none')
   }, [ready, satellite])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+    applyBasemapTheme(map, theme)
+  }, [ready, theme])
 
   // --- fly to the scenario ---
   useEffect(() => {

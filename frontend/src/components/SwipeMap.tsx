@@ -1,8 +1,9 @@
 import * as maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useEffect, useRef, useState } from 'react'
+import { useTheme } from '../theme'
 import type { MapLayer, ScenarioSummary } from '../types/api'
-import { BASEMAP_STYLE, Legend, tileUrl } from './MapView'
+import { applyBasemapTheme, BASEMAP_STYLE, Legend, tileUrl } from './MapView'
 
 /**
  * Side-by-side swipe between two engines' results for the same run.
@@ -36,6 +37,7 @@ export default function SwipeMap({
   const [ready, setReady] = useState(0)
   const [split, setSplit] = useState(0.5)
   const dragging = useRef(false)
+  const theme = useTheme()
 
   useEffect(() => {
     if (!leftRef.current || !rightRef.current) return
@@ -108,6 +110,11 @@ export default function SwipeMap({
       })
     }
   }, [ready, runId, layer, left.id, right.id])
+
+  useEffect(() => {
+    if (ready < 2) return
+    for (const map of [maps.current.a, maps.current.b]) if (map) applyBasemapTheme(map, theme)
+  }, [ready, theme])
 
   // Keep the canvases sized when the container changes (tab switches).
   useEffect(() => {

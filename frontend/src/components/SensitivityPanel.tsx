@@ -38,7 +38,8 @@ export default function SensitivityPanel({ runId }: { runId: string | null }) {
                 <div className="relative mt-0.5 h-3 rounded bg-slate-100" title={f.basis}>
                   <div className="absolute h-3 rounded bg-sky-600"
                        style={{ left: `${a}%`, width: `${Math.max(b - a, 0.5)}%` }} />
-                  <div className="absolute h-3 w-0.5 bg-slate-800"
+                  <div className="absolute h-3 w-0.5 bg-rose-600"
+                       title="base case"
                        style={{ left: `${pct(d.base.peak_m3s)}%` }} />
                 </div>
                 <div className="flex justify-between text-[10px] text-slate-500">
