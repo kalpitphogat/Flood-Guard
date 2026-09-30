@@ -103,17 +103,19 @@ export default function GaugesPanel({ runId }: { runId: string | null }) {
                   <CartesianGrid stroke="#e2e8f0" strokeDasharray="2 3" />
                   <XAxis
                     dataKey="minutes"
+                    type="number"
+                    domain={['dataMin', 'dataMax']}
                     tick={AXIS}
                     tickFormatter={(v) => `${Math.round(Number(v))}`}
                     label={{ value: 'minutes after breach start', position: 'insideBottom', offset: -8, ...AXIS }}
                   />
                   <YAxis tick={AXIS} label={{ value: 'depth (m)', angle: -90, position: 'insideLeft', ...AXIS }} />
                   <Tooltip contentStyle={{ fontSize: 11 }} />
-                  <Legend wrapperStyle={{ fontSize: 10 }} />
+                  <Legend verticalAlign="top" height={20} wrapperStyle={{ fontSize: 10 }} />
                   {current.channel && (
-                    <Line dataKey="channel" name="river at the town" stroke="#0369a1" dot={false} connectNulls={false} />
+                    <Line dataKey="channel" name="river at the town" stroke="#0369a1" dot={false} connectNulls={false} isAnimationActive={false} />
                   )}
-                  <Line dataKey="town" name="town point" stroke="#b45309" dot={false} connectNulls={false} />
+                  <Line dataKey="town" name="town point" stroke="#b45309" dot={false} connectNulls={false} isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
               {[...flags(current.channel), ...flags(current.town)].length > 0 && (

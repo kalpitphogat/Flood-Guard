@@ -31,17 +31,26 @@ export const BASEMAP_STYLE: maplibregl.StyleSpecification = {
       attribution: '© OpenStreetMap contributors',
       maxzoom: 19,
     },
-    // Keyless dark street map for the dark theme (same OSM data, CARTO styling).
+    // Keyless dark basemap for the dark theme: Esri World Dark Gray Canvas, base +
+    // place labels (the same Esri tile server as the satellite layer). CARTO's
+    // dark tiles were tried and now return an "API key required" watermark.
     dark: {
       type: 'raster',
       tiles: [
-        'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-        'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-        'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+        'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
       ],
       tileSize: 256,
-      attribution: '© OpenStreetMap contributors © CARTO',
-      maxzoom: 19,
+      attribution:
+        'Basemap © Esri, HERE, Garmin, © OpenStreetMap contributors, and the GIS user community',
+      maxzoom: 16,
+    },
+    'dark-labels': {
+      type: 'raster',
+      tiles: [
+        'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
+      ],
+      tileSize: 256,
+      maxzoom: 16,
     },
     satellite: {
       type: 'raster',
@@ -56,6 +65,7 @@ export const BASEMAP_STYLE: maplibregl.StyleSpecification = {
   layers: [
     { id: 'osm', type: 'raster', source: 'osm' },
     { id: 'dark', type: 'raster', source: 'dark', layout: { visibility: 'none' } },
+    { id: 'dark-labels', type: 'raster', source: 'dark-labels', layout: { visibility: 'none' } },
     { id: 'satellite', type: 'raster', source: 'satellite', layout: { visibility: 'none' } },
   ],
 }
@@ -64,6 +74,7 @@ export const BASEMAP_STYLE: maplibregl.StyleSpecification = {
 export function applyBasemapTheme(map: maplibregl.Map, theme: Theme) {
   map.setLayoutProperty('osm', 'visibility', theme === 'dark' ? 'none' : 'visible')
   map.setLayoutProperty('dark', 'visibility', theme === 'dark' ? 'visible' : 'none')
+  map.setLayoutProperty('dark-labels', 'visibility', theme === 'dark' ? 'visible' : 'none')
 }
 
 export const LAYER_TITLES: Record<MapLayer, string> = {

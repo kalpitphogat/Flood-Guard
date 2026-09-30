@@ -60,7 +60,21 @@ export default function RealtimeMonitoring() {
 
   return (
     <div className="mx-auto max-w-[1100px] px-4 py-6">
-      <h1 className="text-xl font-semibold text-navy">Real-time Flood Monitoring</h1>
+      <h1 className="flex items-center gap-2 text-xl font-semibold text-navy">
+        Real-time Flood Monitoring
+        <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+          Experimental
+        </span>
+      </h1>
+      <div
+        data-testid="monitoring-experimental"
+        className="mt-3 rounded border border-amber-300 bg-amber-50 p-3 text-[12px] leading-relaxed text-amber-900"
+      >
+        <strong>Work in progress — not validated.</strong> The radar detection below has
+        not yet been checked against a documented event, so its areas and agreement
+        scores are not assessments. The dam-break simulations on the Simulation page do
+        not depend on it.
+      </div>
       <p className="mt-1 max-w-3xl text-sm leading-relaxed text-slate-600">
         Detects open water from Sentinel-1 radar backscatter, which works through cloud
         and at night — the conditions a flood actually happens in, and the reason optical
@@ -163,11 +177,15 @@ export default function RealtimeMonitoring() {
             <ol className="list-decimal space-y-1 pl-4 text-[11px] leading-relaxed text-slate-600">
               <li>Pre/post change detection on Sentinel-1 GRD backscatter.</li>
               <li>Refined Lee speckle filter, so noise is not read as flooding.</li>
-              <li>Otsu threshold computed per scene, not fixed.</li>
+              <li>
+                Otsu threshold computed from the post-event image near the historical
+                water edge, not fixed.
+              </li>
               <li>Permanent water excluded using JRC Global Surface Water.</li>
               <li>
-                Terrain shadow masked by local incidence angle — the dominant false
-                positive in Himalayan terrain.
+                Layover and radar shadow masked per scene from its own incidence angle and
+                look direction (Vollrath et al. 2020) — the dominant false positive in
+                Himalayan terrain.
               </li>
             </ol>
           </Panel>

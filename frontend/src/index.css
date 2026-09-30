@@ -144,3 +144,11 @@ body { margin: 0; background: #f4f6f9; }
 .dark .recharts-wrapper [fill='#7c3aed'] { fill: #a78bfa; }
 .dark .recharts-wrapper [fill='#cbd5e1'] { fill: #475569; }
 .dark .recharts-wrapper [stroke='#64748b'] { stroke: #94a3b8; }
+
+.dark .maplibregl-ctrl-scale {
+  background-color: rgb(17 26 43 / 0.8);
+  border-color: #8b9bb1;
+  color: #c0cbda;
+}
+.dark .maplibregl-ctrl-attrib-button { filter: invert(0.9); }
+.dark .recharts-wrapper [fill='#7fc4e8'] { fill-opacity: 0.85; }

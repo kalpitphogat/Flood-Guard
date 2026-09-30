@@ -200,11 +200,13 @@ def impact(run_id: str) -> ImpactResponse:
             ),
         )
     data = json.loads(path.read_text(encoding="utf-8"))
+    from floodguard.impact.exposure import labelled_facilities, named_evacuation_rows
+
     return ImpactResponse(
         run_id=run_id,
         metrics={k: ImpactMetric(**v) for k, v in data["metrics"].items()},
-        facilities=data.get("facilities", []),
-        evacuation_priority=data.get("evacuation_priority", []),
+        facilities=labelled_facilities(data.get("facilities", [])),
+        evacuation_priority=named_evacuation_rows(data.get("evacuation_priority", [])),
         warnings=data.get("warnings", []),
         provenance=data.get("provenance", {}),
     )

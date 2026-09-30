@@ -317,7 +317,9 @@ def build_report(run_dir: Path, out_path: Path | None = None) -> Path:
             story.append(Spacer(1, 2 * mm))
             story.append(Paragraph(note, small))
 
-        priority = impact.get("evacuation_priority", [])
+        from floodguard.impact.exposure import named_evacuation_rows
+
+        priority = named_evacuation_rows(impact.get("evacuation_priority", []))
         if priority:
             story.append(Paragraph("5.1 Evacuation priority", h2))
             story.append(

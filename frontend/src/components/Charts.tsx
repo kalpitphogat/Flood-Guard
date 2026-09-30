@@ -48,7 +48,7 @@ export function HydrographChart({ runId }: { runId: string | null }) {
 
   return (
     <Panel
-      title="Flood Arrival Time"
+      title="Breach Outflow Hydrograph"
       subtitle="breach outflow and reservoir level, as routed"
     >
       {!runId && <p className="text-xs text-slate-500">No simulation loaded.</p>}
@@ -65,6 +65,8 @@ export function HydrographChart({ runId }: { runId: string | null }) {
               <CartesianGrid stroke={GRID} strokeDasharray="2 3" />
               <XAxis
                 dataKey="hours"
+                type="number"
+                domain={['dataMin', 'dataMax']}
                 tick={AXIS}
                 tickFormatter={(v) => `${Number(v).toFixed(1)}`}
                 label={{ value: 'time (hours)', position: 'insideBottom', offset: -8, ...AXIS }}
@@ -92,7 +94,7 @@ export function HydrographChart({ runId }: { runId: string | null }) {
                 }}
                 labelFormatter={(v) => `t = ${Number(v).toFixed(2)} h`}
               />
-              <Legend wrapperStyle={{ fontSize: 10 }} />
+              <Legend verticalAlign="top" height={20} wrapperStyle={{ fontSize: 10 }} />
               <Line
                 yAxisId="q"
                 type="monotone"
@@ -101,6 +103,7 @@ export function HydrographChart({ runId }: { runId: string | null }) {
                 stroke="#0369a1"
                 strokeWidth={1.8}
                 dot={false}
+                isAnimationActive={false}
               />
               <Line
                 yAxisId="h"
@@ -111,6 +114,7 @@ export function HydrographChart({ runId }: { runId: string | null }) {
                 strokeWidth={1.2}
                 strokeDasharray="4 3"
                 dot={false}
+                isAnimationActive={false}
               />
             </LineChart>
           </ResponsiveContainer>
@@ -199,6 +203,9 @@ export function CrossSectionChart({
               <YAxis
                 tick={AXIS}
                 domain={['dataMin - 5', 'dataMax + 5']}
+                allowDecimals={false}
+                tickFormatter={(v) => `${Math.round(Number(v))}`}
+                width={64}
                 label={{ value: 'elevation (m MSL)', angle: -90, position: 'insideLeft', ...AXIS }}
               />
               <Tooltip

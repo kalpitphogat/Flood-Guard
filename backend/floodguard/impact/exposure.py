@@ -35,6 +35,41 @@ ROAD_CLASSES = ("motorway", "trunk", "primary", "secondary", "tertiary")
 RESIDENTIAL_BUILDINGS = {"yes", "house", "residential", "apartments", "detached", "hut"}
 
 
+def osm_name(value: Any) -> str | None:
+    """An OSM `name` as text, or None when the feature has none.
+
+    GeoDataFrames carry a missing tag as NaN, which is truthy and would otherwise
+    be written out as the settlement "nan".
+    """
+    if value is None:
+        return None
+    if isinstance(value, float) and not np.isfinite(value):
+        return None
+    text = str(value).strip()
+    return None if not text or text.lower() == "nan" else text
+
+
+def named_evacuation_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop evacuation rows without a real name (as `_evacuation_priority` does).
+
+    For impact.json files written before the "nan" fix, so they are served and
+    reported without a settlement called "nan".
+    """
+    return [r for r in rows if osm_name(r.get("name")) is not None]
+
+
+def labelled_facilities(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Give stored facilities without a name the "unnamed <amenity>" label new runs get."""
+    out = []
+    for r in rows:
+        name = osm_name(r.get("name"))
+        if name is None:
+            kind = osm_name(r.get("amenity")) or osm_name(r.get("kind")) or "facility"
+            name = f"unnamed {kind}"
+        out.append({**r, "name": name})
+    return out
+
+
 @dataclass
 class Metric:
     """One reported quantity, which may legitimately be unknown.
@@ -499,7 +534,8 @@ def _facility_table(
             rows.append(
                 {
                     "kind": kind,
-                    "name": row.get("name") or f"unnamed {row.get('amenity', kind)}",
+                    "name": osm_name(row.get("name"))
+                    or f"unnamed {osm_name(row.get('amenity')) or kind}",
                     "amenity": row.get("amenity"),
                     "osm_id": row.get("osm_id"),
                     "depth_m": float(d[i]) if np.isfinite(d[i]) else None,
@@ -574,13 +610,13 @@ def _evacuation_priority(
         try:
             gdf = gpd.read_file(settlements_path).to_crs("EPSG:4326")
             for _, row in gdf.iterrows():
-                name = row.get("name")
-                if not name or row.geometry is None:
+                name = osm_name(row.get("name"))
+                if name is None or row.geometry is None:
                     continue
                 pt = row.geometry.centroid
                 pop = row.get("population")
                 add(
-                    str(name),
+                    name,
                     float(pt.x),
                     float(pt.y),
                     int(pop) if pop and str(pop).isdigit() else None,
