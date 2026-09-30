@@ -21,7 +21,7 @@
 *Simulate a dam break from real terrain. Route the wave with a verified solver.*
 *Count who is in its path. Trace every number back to the file it came from.*
 
-**SIH 2026 · Team ITProfessionals (172707)** · [Submission deck](SUBMISSION%20PPT%20TEMPLATE/FLOODGUARD-INDIA_SIH2026_PS26161.pptx)
+**SIH 2026 · Team ITProfessionals (172707)** ·
 
 </div>
 
