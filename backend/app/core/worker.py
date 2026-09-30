@@ -149,7 +149,15 @@ def kill_tree(pid: int) -> None:
         )
     else:
         try:
-            os.killpg(pid, signal.SIGTERM)  # start_new_session: pgid == pid
+            # Production workers use start_new_session, so their process-group
+            # ID equals their PID. Tests and callers may provide an ordinary
+            # child process that shares the parent's process group; never
+            # signal that group, or this would terminate the test runner.
+            pgid = os.getpgid(pid)
+            if pgid == pid:
+                os.killpg(pgid, signal.SIGTERM)
+            else:
+                os.kill(pid, signal.SIGTERM)
         except ProcessLookupError:
             return
         for _ in range(50):
@@ -157,7 +165,10 @@ def kill_tree(pid: int) -> None:
                 return
             time.sleep(0.1)
         try:
-            os.killpg(pid, signal.SIGKILL)
+            if os.getpgid(pid) == pid:
+                os.killpg(pid, signal.SIGKILL)
+            else:
+                os.kill(pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
 
