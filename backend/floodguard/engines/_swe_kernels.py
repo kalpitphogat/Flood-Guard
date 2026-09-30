@@ -277,9 +277,15 @@ def flux_sweep(
     s_eta_y, s_u_y, s_v_y, s_z_y,
     dh, dhu, dhv,
     fy0, fy1, fy2, fy3,
+    fx0, fx1, fx2, fyF1,
     active, dx, dy, dry_tol, second_order,
 ):
     """One full flux sweep: accumulate -div(F) + bed source into dh/dhu/dhv.
+
+    Every face's Riemann flux is also kept (x faces in fx0/fx1/fx2, the y-face
+    normal momentum flux without its interface correction in fyF1), so that
+    `outflow_limiter` can rescale the fluxes leaving a cell once the timestep
+    is known.
 
     Second-order well-balanced scheme of Audusse et al. (2004). At each face:
 
@@ -310,6 +316,9 @@ def flux_sweep(
     # --- x-direction faces (between c and c+1) ---
     for r in prange(rows):
         for c in range(cols - 1):
+            fx0[r, c] = 0.0
+            fx1[r, c] = 0.0
+            fx2[r, c] = 0.0
             if not active[r, c] or not active[r, c + 1]:
                 continue
 
@@ -352,6 +361,10 @@ def flux_sweep(
             F0, F1, F2 = hllc_flux(
                 hLs, hLs * uL, hLs * vL, hRs, hRs * uR, hRs * vR, dry_tol
             )
+
+            fx0[r, c] = F0
+            fx1[r, c] = F1
+            fx2[r, c] = F2
 
             # Interface correction: the pressure the starred depth does not carry.
             srcL = 0.5 * G * (hLi * hLi - hLs * hLs)
@@ -399,6 +412,8 @@ def flux_sweep(
             fy0[r, c] = 0.0
             fy1[r, c] = 0.0
             fy2[r, c] = 0.0
+            fy3[r, c] = 0.0
+            fyF1[r, c] = 0.0
             if not active[r, c] or not active[r + 1, c]:
                 continue
 
@@ -445,6 +460,7 @@ def flux_sweep(
             # Store the flux together with each side's interface correction, so
             # the accumulation pass needs no state from this one.
             fy0[r, c] = F0
+            fyF1[r, c] = F1
             fy1[r, c] = F1 + 0.5 * G * (hBi * hBi - hBs * hBs)
             fy2[r, c] = F2
             fy3[r, c] = F1 + 0.5 * G * (hTi * hTi - hTs * hTs)
@@ -735,20 +751,30 @@ def save_state(h, hu, hv, h0, hu0, hv0, active):
 
 
 @njit(cache=True, parallel=True)
-def rk2_average(h, hu, hv, h0, hu0, hv0, active, dry_tol):
+def rk2_average(h, hu, hv, h0, hu0, hv0, active, dry_tol, clipped):
     """u_new = (u^n + u^(2)) / 2, in place, with the dry-cell cleanup fused in.
 
     Written as a kernel rather than as numpy expressions because
     `h *= 0.5; h += 0.5 * h0` allocates a fresh full-size temporary for the
     right-hand side on every one of six statements, every step.
+
+    The final state is the only one cleaned up: a depth under the dry tolerance
+    is zeroed, and the water that adds (negative average) or removes (thin film)
+    is accumulated into `clipped` as in `apply_update`.
     """
     rows, cols = h.shape
+    created = 0.0
+    removed = 0.0
     for r in prange(rows):
         for c in range(cols):
             if not active[r, c]:
                 continue
             nh = 0.5 * (h[r, c] + h0[r, c])
             if nh < dry_tol:
+                if nh < 0.0:
+                    created += -nh
+                else:
+                    removed += nh
                 h[r, c] = 0.0
                 hu[r, c] = 0.0
                 hv[r, c] = 0.0
@@ -756,6 +782,100 @@ def rk2_average(h, hu, hv, h0, hu0, hv0, active, dry_tol):
                 h[r, c] = nh
                 hu[r, c] = 0.5 * (hu[r, c] + hu0[r, c])
                 hv[r, c] = 0.5 * (hv[r, c] + hv0[r, c])
+    clipped[0] += created
+    clipped[1] += removed
+
+
+@njit(cache=True, parallel=True)
+def outflow_limiter(
+    h, fx0, fx1, fx2, fy0, fyF1, fy2, phi, dh, dhu, dhv, active, dt, dx, dy,
+):
+    """Scale the fluxes LEAVING each cell so no cell can lose more than it holds.
+
+    For every cell, phi = min(1, h / (dt * outflow)), where outflow is the sum
+    of the mass fluxes out through its four faces. Every face flux (mass and
+    both momentum components) is then multiplied by the phi of its DONOR cell,
+    the upwind side of the mass flux. The receiving cell gets exactly what the
+    donor lost, so mass is conserved to round-off, and h + dt*dh >= 0 holds by
+    construction instead of being enforced by setting negative depths to zero.
+
+    This is the draining-time-step idea of Bollermann, Chen, Kurganov & Noelle
+    (2013), J. Sci. Comput. 56(2), 267-290, applied per cell. It replaces a
+    guard that CREATED water: on the Tehri 120 m presets, zeroing negative
+    depths added 7-29% to the flood volume.
+
+    Still water has no mass flux, so phi = 1 everywhere and the well-balanced
+    lake-at-rest state is untouched. Interface pressure corrections and bed
+    source terms are not scaled. Fluxes through the outer domain boundary are
+    not included (they are applied separately); any overdraft there is still
+    caught and measured by `apply_update`.
+
+    Written as a per-cell gather (each cell reads its four faces and writes
+    only itself), so the parallel loops have no write conflicts.
+    """
+    rows, cols = h.shape
+    inv_dx = 1.0 / dx
+    inv_dy = 1.0 / dy
+
+    for r in prange(rows):
+        for c in range(cols):
+            phi[r, c] = 1.0
+            if not active[r, c]:
+                continue
+            out = 0.0
+            if c < cols - 1 and fx0[r, c] > 0.0:
+                out += fx0[r, c] * inv_dx
+            if c > 0 and fx0[r, c - 1] < 0.0:
+                out -= fx0[r, c - 1] * inv_dx
+            if r < rows - 1 and fy0[r, c] > 0.0:
+                out += fy0[r, c] * inv_dy
+            if r > 0 and fy0[r - 1, c] < 0.0:
+                out -= fy0[r - 1, c] * inv_dy
+            drain = dt * out
+            if drain > h[r, c]:
+                phi[r, c] = h[r, c] / drain if drain > 0.0 else 1.0
+
+    for r in prange(rows):
+        for c in range(cols):
+            if not active[r, c]:
+                continue
+            # East face: this cell is its left side, where the flux was subtracted.
+            if c < cols - 1:
+                F0 = fx0[r, c]
+                s = phi[r, c] if F0 > 0.0 else phi[r, c + 1]
+                if s < 1.0:
+                    k = (1.0 - s) * inv_dx
+                    dh[r, c] += k * F0
+                    dhu[r, c] += k * fx1[r, c]
+                    dhv[r, c] += k * fx2[r, c]
+            # West face: this cell is its right side, where the flux was added.
+            if c > 0:
+                F0 = fx0[r, c - 1]
+                s = phi[r, c - 1] if F0 > 0.0 else phi[r, c]
+                if s < 1.0:
+                    k = (1.0 - s) * inv_dx
+                    dh[r, c] -= k * F0
+                    dhu[r, c] -= k * fx1[r, c - 1]
+                    dhv[r, c] -= k * fx2[r, c - 1]
+            # Top face (r, r+1): this cell is the bottom side (subtracted). In y
+            # the normal momentum is hv and the transverse is hu.
+            if r < rows - 1:
+                F0 = fy0[r, c]
+                s = phi[r, c] if F0 > 0.0 else phi[r + 1, c]
+                if s < 1.0:
+                    k = (1.0 - s) * inv_dy
+                    dh[r, c] += k * F0
+                    dhv[r, c] += k * fyF1[r, c]
+                    dhu[r, c] += k * fy2[r, c]
+            # Bottom face (r-1, r): this cell is the top side (added).
+            if r > 0:
+                F0 = fy0[r - 1, c]
+                s = phi[r - 1, c] if F0 > 0.0 else phi[r, c]
+                if s < 1.0:
+                    k = (1.0 - s) * inv_dy
+                    dh[r, c] -= k * F0
+                    dhv[r, c] -= k * fyF1[r - 1, c]
+                    dhu[r, c] -= k * fy2[r - 1, c]
 
 
 @njit(cache=True)
@@ -803,7 +923,10 @@ def positivity_dt(h, dh, active, significant_depth):
 
 
 @njit(cache=True, parallel=True)
-def apply_update(h, hu, hv, dh, dhu, dhv, active, dt, dry_tol, max_speed, counters):
+def apply_update(
+    h, hu, hv, dh, dhu, dhv, active, dt, dry_tol, max_speed, counters, clipped,
+    clip_negative=True,
+):
     """Explicit Euler update with positivity and thin-film momentum control.
 
     Three safeguards, in order of how often they fire:
@@ -829,11 +952,25 @@ def apply_update(h, hu, hv, dh, dhu, dhv, active, dt, dry_tol, max_speed, counte
        silently lies.
 
     `counters` is a 2-element array: [cells dried by positivity, cells capped].
+    `clipped` is a 2-element float array accumulating, in metres of depth summed
+    over cells, the water the positivity guard CREATED (a negative depth set to
+    zero) and REMOVED (a sub-tolerance film set to zero). Multiply by the cell
+    area for volume. This is what makes the guard's mass effect measurable.
+
+    `clip_negative=False` is for the SECOND stage of SSP-RK2 only. That stage's
+    result is never used to compute a flux: it is immediately averaged with the
+    step's starting state, h_new = (h^n + h^(2)) / 2. Clipping it to zero first
+    CREATED water wherever h^(2) was slightly negative but the average was not:
+    measured at 127 MCM in the first simulated hour of the Tehri mid preset, 80%
+    of all the water the guard created. Unclipped, the intermediate is averaged
+    and only the final state is cleaned up (in `rk2_average`).
     """
     rows, cols = h.shape
     thin = 10.0 * dry_tol
     dried = 0
     capped = 0
+    created = 0.0
+    removed = 0.0
 
     for r in prange(rows):
         for c in range(cols):
@@ -841,9 +978,20 @@ def apply_update(h, hu, hv, dh, dhu, dhv, active, dt, dry_tol, max_speed, counte
                 continue
             new_h = h[r, c] + dt * dh[r, c]
 
+            if not clip_negative and new_h <= dry_tol:
+                # Intermediate stage: keep the raw state for the average.
+                h[r, c] = new_h
+                hu[r, c] = hu[r, c] + dt * dhu[r, c]
+                hv[r, c] = hv[r, c] + dt * dhv[r, c]
+                continue
+
             if new_h <= dry_tol:
                 if h[r, c] > dry_tol:
                     dried += 1
+                if new_h < 0.0:
+                    created += -new_h
+                else:
+                    removed += new_h
                 h[r, c] = 0.0
                 hu[r, c] = 0.0
                 hv[r, c] = 0.0
@@ -872,6 +1020,8 @@ def apply_update(h, hu, hv, dh, dhu, dhv, active, dt, dry_tol, max_speed, counte
 
     counters[0] += dried
     counters[1] += capped
+    clipped[0] += created
+    clipped[1] += removed
 
 
 @njit(cache=True, parallel=True)

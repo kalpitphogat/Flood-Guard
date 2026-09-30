@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useEngines, useScenarios } from '../api/hooks'
+import RegistryPanel from '../components/RegistryPanel'
 import { EngineBadge, Panel, Skeleton } from '../components/Value'
 
 export default function Home() {
@@ -113,6 +114,9 @@ export default function Home() {
               </p>
             )}
           </Panel>
+        </div>
+        <div className="mt-3">
+          <RegistryPanel />
         </div>
       </section>
     </div>

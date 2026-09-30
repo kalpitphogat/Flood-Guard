@@ -1,8 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useBreachPreview, useDams, useEngines, useRivers, useScenarios } from '../api/hooks'
+import {
+  useBreachPreview,
+  useDams,
+  usePresets,
+  useRivers,
+  useScenarios,
+} from '../api/hooks'
 import type { ScenarioSummary, ScenarioType, SimulationRequest } from '../types/api'
+import PresetPicker from './PresetPicker'
 import UploadPanel, { type UploadSelection } from './UploadPanel'
-import { EngineBadge, Panel, Skeleton, formatNumber } from './Value'
+import { Panel, Skeleton, formatNumber } from './Value'
+
+export type InputMode = 'preset' | 'custom'
 
 const SCENARIO_TYPES: Array<{ value: ScenarioType; label: string; note?: string }> = [
   { value: 'complete_dam_break', label: 'Complete Dam Break' },
@@ -17,15 +26,6 @@ const SCENARIO_TYPES: Array<{ value: ScenarioType; label: string; note?: string 
   },
 ]
 
-/** Engines offered in the model picker, in display order, with plain-language names. */
-const ENGINE_CHOICES: Array<{ id: string; label: string }> = [
-  { id: 'swe_fv', label: 'FloodGuard-SWE — 2D finite volume (Delft3D-class)' },
-  { id: 'sph_swe', label: 'FloodGuard-SPH — smoothed particle hydrodynamics' },
-  { id: 'delft3d', label: 'Delft3D Flexible Mesh (external)' },
-  { id: 'sph_pysph', label: 'PySPH 3D WCSPH (external)' },
-  { id: 'anuga', label: 'ANUGA (independent cross-check)' },
-]
-
 export interface InputPanelProps {
   onRun: (request: SimulationRequest) => void
   running: boolean
@@ -34,6 +34,8 @@ export interface InputPanelProps {
   onSelectionChange?: (summary: ScenarioSummary | null) => void
   uploads: UploadSelection
   onUploadsChange: (next: UploadSelection) => void
+  /** Starting mode; the dashboard opens on the instant presets. */
+  initialMode?: InputMode
 }
 
 export default function InputPanel({
@@ -43,10 +45,13 @@ export default function InputPanel({
   onSelectionChange,
   uploads,
   onUploadsChange,
+  initialMode = 'preset',
 }: InputPanelProps) {
   const scenarios = useScenarios()
   const rivers = useRivers()
-  const engines = useEngines()
+  const presets = usePresets()
+  const [mode, setMode] = useState<InputMode>(initialMode)
+  const [presetDamId, setPresetDamId] = useState<string>('')
 
   const [scenarioId, setScenarioId] = useState<string>('')
   const [river, setRiver] = useState<string>('')
@@ -54,10 +59,8 @@ export default function InputPanel({
   const [level, setLevel] = useState<string>('')
   const [width, setWidth] = useState<string>('')
   const [depth, setDepth] = useState<string>('')
+  const [fraction, setFraction] = useState<string>('')
   const [formation, setFormation] = useState<string>('')
-  const [duration, setDuration] = useState<string>('')
-  const [resolution, setResolution] = useState<string>('90')
-  const [selectedEngines, setSelectedEngines] = useState<string[]>(['swe_fv', 'sph_swe'])
   const [showAdvanced, setShowAdvanced] = useState(false)
   // A bundled scenario, or any dam in the CWC NRLD catalog.
   const [source, setSource] = useState<'scenario' | 'dam'>('scenario')
@@ -73,16 +76,20 @@ export default function InputPanel({
       if (first) {
         setScenarioId(first.id)
         setRiver(first.river)
-        setDuration(String(first.duration_hours))
       }
     }
   }, [scenarios.data, scenarioId])
 
   const active = scenarios.data?.find((s) => s.id === scenarioId) ?? null
 
+  const quick = presets.data?.quick
+  const presetScenario = scenarios.data?.find((s) => s.id === presetDamId) ?? null
+
   useEffect(() => {
     if (!onSelectionChange) return
-    if (source === 'scenario') {
+    if (mode === 'preset') {
+      onSelectionChange(presetScenario)
+    } else if (source === 'scenario') {
       onSelectionChange(active)
     } else if (dam) {
       onSelectionChange({
@@ -95,8 +102,8 @@ export default function InputPanel({
         lon: dam.lon,
         lat: dam.lat,
         scenario_type: scenarioType,
-        resolution_m: Number(resolution) || 90,
-        duration_hours: Number(duration) || 6,
+        resolution_m: quick?.resolution_m ?? 200,
+        duration_hours: quick?.duration_hours ?? 1,
         reach_length_km: 0,
         towns: [],
         valid: true,
@@ -106,11 +113,14 @@ export default function InputPanel({
     }
     // onSelectionChange is a setter from the parent; identity is stable enough.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source, active, dam, scenarioType, resolution, duration])
+  }, [mode, presetScenario, source, active, dam, scenarioType, quick])
 
   // A catalog dam has no published FRL in the NRLD transcription, so the
   // level must be typed; it is never guessed.
   const needsLevel = source === 'dam' && !dam?.frl_m && !level
+
+  // A partial breach needs a depth fraction the user chooses; it is never predicted.
+  const partial = scenarioType === 'partial_breach'
 
   const request: SimulationRequest | null = useMemo(() => {
     if (source === 'scenario' && !scenarioId) return null
@@ -123,37 +133,107 @@ export default function InputPanel({
       reservoir_level_m: level ? Number(level) : null,
       breach: {
         width_m: width ? Number(width) : null,
-        depth_m: depth ? Number(depth) : null,
+        depth_m: !partial && depth ? Number(depth) : null,
+        depth_fraction: partial && fraction ? Number(fraction) : null,
         formation_time_min: formation ? Number(formation) : null,
       },
-      engines: selectedEngines,
-      resolution_m: resolution ? Number(resolution) : null,
-      duration_hours: duration ? Number(duration) : null,
+      // Custom inputs always run as a labelled quick estimate; the server
+      // forces resolution, duration and engine, so none are sent from here.
+      engines: ['swe_fv'],
+      quick: true,
     }
   }, [
     source, scenarioId, damId, uploads.dem, uploads.hydrograph, scenarioType, level, width,
-    depth, formation, selectedEngines, resolution, duration,
+    depth, fraction, partial, formation,
   ])
 
   // Ghost hints: what the empirical models predict, live, before running.
   const preview = useBreachPreview(
-    request && !needsLevel ? { ...request, breach: {} } : null,
+    request && !needsLevel && !(partial && !fraction)
+      ? { ...request, breach: partial ? { depth_fraction: Number(fraction) } : {} }
+      : null,
   )
   const predicted = preview.data?.used
   const spread = preview.data?.spread
-
-  const toggleEngine = (id: string) =>
-    setSelectedEngines((prev) =>
-      prev.includes(id) ? prev.filter((e) => e !== id) : [...prev, id],
-    )
 
   const validationError =
     preview.isError && request
       ? (preview.error as Error)?.message ?? 'this configuration is not valid'
       : null
 
+  const modeSwitch = (
+    <div className="flex rounded border border-slate-300 p-0.5 text-xs" role="tablist">
+      {(
+        [
+          ['preset', 'Preset — instant'],
+          ['custom', 'Custom — quick estimate'],
+        ] as const
+      ).map(([value, label]) => (
+        <button
+          key={value}
+          type="button"
+          role="tab"
+          aria-selected={mode === value}
+          onClick={() => setMode(value)}
+          className={`flex-1 rounded py-1 ${
+            mode === value ? 'bg-sky-700 font-medium text-white' : 'text-slate-600'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+
+  if (mode === 'preset') {
+    return (
+      <div className="space-y-3">
+        {modeSwitch}
+        <Panel
+          title="Precomputed Scenarios"
+          subtitle="Real full-pipeline runs, computed ahead of time"
+        >
+          {presets.isLoading && <Skeleton className="h-24" />}
+          {presets.isError && (
+            <p className="text-[11px] text-rose-800">
+              Could not load the preset list: {(presets.error as Error).message}
+            </p>
+          )}
+          {presets.data && presets.data.dams.length === 0 && (
+            <p className="text-[11px] text-slate-500">No dam has presets defined.</p>
+          )}
+          {presets.data && presets.data.dams.length > 0 && (
+            <PresetPicker
+              catalog={presets.data}
+              running={running}
+              onDamChange={setPresetDamId}
+              onRun={(preset) =>
+                onRun({ scenario_id: preset.scenario_id, preset_key: preset.key })
+              }
+            />
+          )}
+        </Panel>
+        <button
+          type="button"
+          onClick={onReset}
+          className="w-full rounded border border-slate-300 px-3 py-1.5 text-xs text-slate-700
+                     hover:bg-slate-50"
+        >
+          Reset
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-3">
+      {modeSwitch}
+      <p className="rounded border border-sky-200 bg-sky-50 px-2 py-1.5 text-[11px] leading-relaxed text-sky-900">
+        Runs live at {formatNumber(quick?.resolution_m ?? null, 0)} m for{' '}
+        {formatNumber(quick?.duration_hours ?? null, 0)} simulated hour
+        {quick?.duration_hours === 1 ? '' : 's'} (~15–60 s). Coarser than presets, and
+        labelled &ldquo;{quick?.label ?? 'Quick estimate'}&rdquo; on every output.
+      </p>
       <Panel title="Select River & Dam">
         {scenarios.isLoading ? (
           <Skeleton className="h-16" />
@@ -189,7 +269,6 @@ export default function InputPanel({
                   setScenarioId(e.target.value)
                   if (next) {
                     setRiver(next.river)
-                    setDuration(String(next.duration_hours))
                   }
                 }}
               >
@@ -307,13 +386,33 @@ export default function InputPanel({
                 : undefined
             }
           />
-          <NumberField
-            label="Breach Depth"
-            unit="m"
-            value={depth}
-            onChange={setDepth}
-            placeholder={predicted ? `${Math.round(predicted.depth_m)} predicted` : 'predicted'}
-          />
+          {partial ? (
+            <div>
+              <NumberField
+                label="Breach Depth Fraction"
+                unit="0–1 of dam height"
+                value={fraction}
+                onChange={setFraction}
+                placeholder="required, e.g. 0.5"
+              />
+              <p
+                className="mt-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] leading-relaxed text-amber-900"
+                data-testid="partial-assumption"
+              >
+                Assumption: no published model predicts how deep a partial breach cuts. The
+                fraction you enter is used as given and labelled as your assumption on the
+                result.
+              </p>
+            </div>
+          ) : (
+            <NumberField
+              label="Breach Depth"
+              unit="m"
+              value={depth}
+              onChange={setDepth}
+              placeholder={predicted ? `${Math.round(predicted.depth_m)} predicted` : 'predicted'}
+            />
+          )}
           <NumberField
             label="Breach Formation Time"
             unit="min"
@@ -322,12 +421,6 @@ export default function InputPanel({
             placeholder={
               predicted ? `${Math.round(predicted.formation_time_min)} predicted` : 'predicted'
             }
-          />
-          <NumberField
-            label="Simulation Duration"
-            unit="hours"
-            value={duration}
-            onChange={setDuration}
           />
 
           {spread && spread.width_m.spread_ratio > 2 && (
@@ -347,43 +440,11 @@ export default function InputPanel({
         </div>
       </Panel>
 
-      <Panel title="Select Models" subtitle="Availability probed on this machine">
-        <div className="space-y-1.5">
-          {engines.isLoading && <Skeleton className="h-12" />}
-          {ENGINE_CHOICES.map((choice) => engines.data?.engines.find((e) => e.id === choice.id))
-            .filter((e): e is NonNullable<typeof e> => !!e)
-            .map((engine) => (
-              <label
-                key={engine.id}
-                className="flex cursor-pointer items-start gap-2 rounded px-1 py-1 hover:bg-slate-50"
-              >
-                <input
-                  type="checkbox"
-                  className="mt-0.5"
-                  checked={selectedEngines.includes(engine.id)}
-                  onChange={() => toggleEngine(engine.id)}
-                />
-                <span className="flex-1">
-                  <span className="block text-xs font-medium text-slate-800">
-                    {ENGINE_CHOICES.find((c) => c.id === engine.id)?.label ?? engine.id}
-                  </span>
-                  <span className="mt-0.5 block">
-                    <EngineBadge
-                      displayName={engine.available ? engine.display_name : `→ ${engine.substitute_id ?? 'unavailable'}`}
-                      isRealSolver={engine.is_real_solver}
-                      substituted={!engine.available}
-                      detail={engine.detail}
-                    />
-                  </span>
-                </span>
-              </label>
-            ))}
-          {engines.data && (
-            <p className="pt-1 text-[10px] leading-relaxed text-slate-500">
-              {engines.data.honesty_statement}
-            </p>
-          )}
-        </div>
+      <Panel title="Model">
+        <p className="text-[11px] leading-relaxed text-slate-600">
+          Quick estimates run <strong>FloodGuard-SWE</strong> (2D finite volume) only. The
+          second engine and finer grids are for the precomputed presets and the CLI.
+        </p>
       </Panel>
 
       <UploadPanel selection={uploads} onChange={onUploadsChange} />
@@ -391,23 +452,17 @@ export default function InputPanel({
       {needsLevel && (
         <p className="text-[10px] text-amber-800">Enter a reservoir water level to run this dam.</p>
       )}
-      {selectedEngines.length >= 2 && (
-        <p className="text-[10px] leading-relaxed text-slate-500">
-          {selectedEngines.length} engines selected: they run one after another on the same
-          grid, and the Comparison View fills itself from their results.
-        </p>
-      )}
 
       <div className="flex gap-2">
         <button
           type="button"
-          disabled={!request || running || selectedEngines.length === 0 || needsLevel}
+          disabled={!request || running || needsLevel || (partial && !fraction)}
           onClick={() => request && onRun(request)}
           className="flex-1 rounded bg-sky-700 px-3 py-2 text-sm font-medium text-white
                      transition-colors hover:bg-sky-800 disabled:cursor-not-allowed
                      disabled:bg-slate-300"
         >
-          {running ? 'Running…' : 'Run Simulation'}
+          {running ? 'Running…' : 'Run quick estimate'}
         </button>
         <button
           type="button"
@@ -432,21 +487,13 @@ export default function InputPanel({
         }
       >
         {showAdvanced ? (
-          <div className="space-y-2">
-            <NumberField
-              label="Grid resolution"
-              unit="m"
-              value={resolution}
-              onChange={setResolution}
-              hint="Cost scales as roughly 1/res³. Peak depths are genuinely resolution-sensitive."
-            />
-            <p className="text-[10px] leading-relaxed text-slate-500">
-              A coarse cell averages the channel together with its banks and under-predicts
-              the peak, so this is exposed rather than fixed. Every output records the
-              resolution it was computed at. 30 m is the publication setting; 90–120 m is
-              interactive.
-            </p>
-          </div>
+          <p className="text-[10px] leading-relaxed text-slate-500">
+            Grid resolution is fixed at {formatNumber(quick?.resolution_m ?? null, 0)} m for a
+            quick estimate. A coarse cell averages the channel together with its banks and
+            under-predicts the peak, which is why every output records the resolution it was
+            computed at. Finer runs (30–120 m) are made with <code>floodguard simulate</code>{' '}
+            or <code>floodguard precompute</code>.
+          </p>
         ) : (
           <p className="text-[11px] text-slate-500">
             Grid resolution, Manning&rsquo;s n overrides, CFL and output interval.

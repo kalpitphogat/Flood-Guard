@@ -7,6 +7,11 @@ runs/
 data/uploads/
 data/jobs.sqlite*
 data/shares.json
+# Preset library: index, logs and packs are generated; move them with a .fgpack
+data/library/
+*.fgpack
+# Runs made before the 2026-09-30 solver fixes, kept only as evidence
+data/quarantine/
 
 # Reference repos — cloned read-only, never vendored
 reference/

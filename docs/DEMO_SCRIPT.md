@@ -1,272 +1,197 @@
-# Five-minute demo script
+# Five-minute demo script (preset flow)
 
-Exact click order, the numbers to expect, what to say, and the three questions
-judges will ask.
+Exact click order, what to say, and the questions judges will ask. **Every
+number below was measured from the six precomputed preset runs of 2026-09-30
+(120 m, FloodGuard-SWE) or from `floodguard validate` on the final code.** If
+you recompute anything, re-read the numbers from the dashboard, not from here.
 
-**Before you start:** `make serve` (one process: API + built dashboard on
-:8000), or `make demo`. Run `python -m floodguard.cli demo --check` — every row
-should be OK, including **Two-engine comparison**. Switch on **Demo Mode** in
-the Simulation toolbar before the judges arrive, so a completed run is already
-on screen.
+**Before you start**
+1. `python -m floodguard.cli pack import floodguard_demo_presets_120m.fgpack`
+   (once, on the demo laptop; see `docs/HANDOFF.md` R3.5).
+2. `make serve` → http://localhost:8000. Open **Simulation**. The input panel
+   opens on **Preset — instant**.
+3. Check: all three reservoir levels are selectable for both dams; the two
+   other failure types are greyed out with "not precomputed yet".
 
 ---
 
 ## 0:00 — 0:30 · Frame the problem
 
-> "Smart India Hackathon problem statement 26161 asks for dam-break inundation
-> modelling of any river. Our position is that the deliverable is a running
-> system whose numbers can be traced back to a file on disk — so everything
-> you're about to see was computed, and anything that wasn't, says so."
+> "Problem statement 26161: dam-break inundation modelling for any river. What
+> you'll see are real, full-pipeline runs, computed ahead of time and labelled
+> with the date they were computed — plus a live quick mode for anything else,
+> labelled as coarse. Nothing is presented as something it isn't."
 
-Open **Home**. Point at the engine table at the bottom.
+Open **Home** and point at the engine table.
 
-> "This table is probed from the machine, live. It says Delft3D binaries aren't
-> installed here, and it names what runs instead. That's the honesty commitment
-> this whole project is built on, and it's the first thing on the home page
-> rather than a footnote."
+> "Probed live from this machine. No Delft3D binary here, so the tool says so,
+> and names the solver that actually runs."
 
 ---
 
-## 0:30 — 1:15 · Configure a scenario
+## 0:30 — 1:30 · A preset, instantly
 
-Go to **Simulation**. The Tehri scenario is preselected.
+In **Precomputed Scenarios**: Dam = Tehri, Failure type = Complete dam break,
+Reservoir level = **Full reservoir level (FRL) — 830.00 m**. Click **Show
+precomputed result**.
 
-> "Tehri, on the Bhagirathi — not the Alaknanda; those meet at Devprayag to form
-> the Ganga. India's tallest dam at 260 metres."
+Point at the green badge above the map: *Precomputed on 2026-09-30 · 120 m · 6 h simulated*.
 
-Open the **Scenario Configuration** panel. Point at the breach width field.
+> "This loaded in about a second because it was computed ahead of time — it
+> took 178.5 seconds of solver time. The badge says exactly that; we never
+> present a stored run as computed now."
 
-> "We haven't typed a breach width. The ghost hint is what Froehlich 2008
-> predicts from the dam height and storage, live, before we commit to a run."
+Point at the KPI cards.
 
-Point at the amber spread warning.
+> "154.8 square kilometres flooded, first arrival 10 minutes after the breach
+> starts. The breach releases 3,526 million cubic metres — that matches the CWC
+> register's 3,540 to within half a percent, because the reservoir bed under
+> the lake surface is reconstructed and calibrated to it. The run says so in
+> its warnings."
 
-> "And this is the thing most dam-break tools hide. We run three published
-> breach models, not one. On Tehri they disagree by a factor of **7.8** on
-> width. That means breach geometry — not our solver — is the dominant
-> uncertainty in the map you're about to see, and we'd rather tell you that
-> than let you believe a number to three significant figures."
+Switch the level to **Minimum drawdown level (MDDL) — 740.00 m**.
 
----
-
-## 1:15 — 2:00 · Results
-
-Flip the **Demo Mode** switch in the toolbar. It loads a completed run from
-disk in a second — a run that `floodguard simulate` produced, not a canned
-result. Do not run a fresh 6-hour simulation live.
-
-Point at the four KPI cards.
-
-> "Flooded area, maximum depth, maximum velocity, earliest arrival. Every one
-> computed from the depth raster this run produced. Nothing here is a constant
-> in the source."
-
-Point at any card showing an em dash, if present.
-
-> "Where something couldn't be computed it shows a dash, not a zero. Those are
-> different statements. A building count of zero means we looked and found
-> none; a dash means the layer never downloaded."
-
-Point at the engine badge.
-
-> "The badge reads *FloodGuard-SWE, Delft3D-class FV solver*. That string comes
-> from the machine probe. There is no code path in the frontend that composes
-> its own engine label."
+> "Same dam, reservoir drawn down: 28.1 square kilometres, and the wave reaches
+> Devprayag at 159 minutes instead of 90. Reservoir level changes the answer —
+> which is why it's a choice here and not a constant."
 
 ---
 
-## 2:00 — 2:45 · The map and the wave
+## 1:30 — 2:15 · The wave, and the tools a control room uses
 
-Press **▶ Play** on the time slider.
+Press **▶ Play**, then click **4×**.
 
-> "Each step is a depth field the solver stored during the run — the raster
-> itself is animating, served as tiles so the browser never downloads the
-> grid. Towns turn blue as the computed wave reaches them: Devprayag, then
-> Rishikesh, then Haridwar."
+> "Each frame is a depth field the solver stored. The speed control only
+> changes how fast we step through them."
 
-Switch the layer dropdown to **Flood arrival time**, then **Hazard class**.
+Open **Export** → **Wave animation KMZ (per frame)**, open it in Google Earth
+if available.
 
-> "Arrival time is what an evacuation plan runs on. Hazard is the Australian
-> Disaster Resilience Handbook 7 classification — depth times velocity — so
-> H5 and H6 mean buildings themselves are at risk, not just people."
+> "Every frame's wet area as its own time span, so Google Earth's slider shows
+> the flood arriving and draining, not just its maximum."
 
-Open the **3D View** tab and drag to tilt.
+Point at the **Early Warning** panel and the Hindi bulletin button.
 
-> "The terrain is the conditioned DEM the solver actually ran on, and the water
-> is its computed surface. Dry cells aren't smoothed over to look continuous."
-
-Point at the **cross-section** panel below.
-
-> "Terrain in grey, maximum water level in blue, at each named town. Haridwar's
-> section carries a caveat because the town sits 8 km off the traced channel, so
-> that's a valley section, not a town section."
+> "Alert level per town, nearest safe ground, a Hindi bulletin and a CAP 1.2
+> file marked Exercise — issuing an actual alert is an authority's decision."
 
 ---
 
-## 2:30 — 2:45 · Two engines, compared
+Scroll to **Town Gauges** and click **Rishikesh**.
 
-Open **Comparison View**. Drag the swipe handle across the valley.
+> "Two curves: the town's own point, which stays dry because it sits 2.3 km
+> from the river, and the river beside the town, which the flood reaches at
+> 264 minutes and is still rising when the six-hour run ends. We show both,
+> because the town row alone would have said 'not reached'."
 
-> "Left is our finite-volume solver, right is our SPH solver — particles, no
-> mesh, no Riemann solver, completely different numerics, same physics, same
-> grid, same breach. Where they agree we trust the answer more; where they
-> don't, the difference raster shows exactly where. The table underneath is
-> computed from both rasters: CSI of the extents, depth RMSE, and arrival at
-> each town by each engine."
+Scroll to **What Matters Most**.
 
-## 2:45 — 3:30 · The part that wins it — verification
+> "Each breach input moved alone across the range the published models
+> themselves disagree over. For Tehri the formation time dominates the peak;
+> for Hirakud it is the breach width. That is where better data would help most."
 
-Go to **About**, scroll to Validation. Or open `docs/validation/ritter_dam_break.png`.
+## 2:15 — 3:00 · Consequences, with the method on the page
 
-> "This is the single most important slide. The black line is Ritter's 1892
-> analytical solution for a dam break on a dry bed. The dashed blue line is our
-> solver. Relative L2 error **0.503%**."
+Scroll to **Loss-of-Life Estimate**.
 
-> "Stoker's wet-bed solution — which produces a real shock, so it tests the
-> Riemann solver rather than just the rarefaction — **1.101%**, shock located
-> within **0.06 cells**."
+> "Graham 1999, the US Bureau of Reclamation method, with the rate table
+> transcribed from the report itself. Warning issued when the breach starts:
+> between 813 and 8,840 people, of 148,354 modelled residents in the flooded
+> area. It's a range, it says it's a planning estimate and not a prediction,
+> and it's only in the officials' section of the bulletin — never in the SMS."
 
-> "Lake at rest over rough terrain: spurious velocity **3.92 × 10⁻¹²** m/s. A
-> scheme that isn't well-balanced produces metres per second of flow that
-> doesn't exist, on every slope of a Himalayan DEM."
+Change *Warning issued* to **1 h after breach starts (night)**.
 
-> "Seven checks, all passing, run by `make validate`, plots in the repository.
-> And the SPH engine is held to the same exact solutions: Ritter at about 4%,
-> Stoker at about 4%, and momentum conserved to 10⁻¹⁶ because every particle
-> pair force is equal and opposite."
+> "An hour's delay: 1,436 to 16,851. That's the argument for early warning, in
+> the method's own numbers."
+
+---
+
+## 3:00 — 3:30 · Generality: the opposite river
+
+Dam = **Hirakud**, level FRL (192.02 m).
+
+> "Same code, a YAML file of difference. Hirakud is 61 metres of head on a flat
+> plain: the peak discharge comes at 530 minutes instead of 80, 1,438 square
+> kilometres flooded, Sambalpur reached after 494 minutes. The FRL run took
+> 428 seconds on our server; you're seeing it instantly."
+
+---
+
+## 3:30 — 4:15 · Anything else: quick estimate, live
+
+Switch to **Custom — quick estimate**. Pick a scenario, change the reservoir
+level, click **Run quick estimate**.
+
+> "Anything that isn't a preset runs live — at 200 metres, for one simulated
+> hour, and it's labelled exactly that on the map, in the result file and in
+> the PDF. Coarser, but honest about it."
+
+When it finishes, point at the amber badge: *Quick estimate · 200 m · 1 h simulated*.
+
+---
+
+## 4:15 — 5:00 · Why the numbers can be trusted — and what we fixed
+
+Go to **About** → Validation (or `docs/validation/`).
+
+> "The solver is checked against exact solutions: Ritter's dam break at 0.305%
+> error, Stoker's at 0.725% with the shock within 0.4 cells, still water over
+> rough terrain staying still to 4 × 10⁻¹², and Thacker's oscillating bowl —
+> a moving shoreline on a curved bed — with the period right to 0.01%."
 
 Then the sentence that matters:
 
-> "Verification isn't validation. Passing these means our numerics are right.
-> It says nothing about whether the DEM or the breach parameters describe the
-> real river. We keep those two questions separate, and we say so in the
-> methodology."
+> "And when our first real runs looked wrong — 339 metres of water at
+> Devprayag — we didn't tune it away. We found four bugs, including two that
+> created water, fixed them, and now every run reports its mass balance: Tehri
+> closes to 0.03% with zero water created. The runs you just saw are the fixed
+> ones."
 
 ---
 
-## 3:30 — 4:15 · Exports and the report
+## Questions judges will ask
 
-Click **Download as KML**, open it in Google Earth if available.
+### "Where does this number come from?"
+Open **Provenance** → **Show all**: every value with the file and field it was
+read from, and the cautions first (reconstructed bathymetry, the FRL/MDDL values
+that are not in the NRLD tables).
 
-> "Time-stamped folders, so Google Earth animates the wave. That's what a
-> district officer will actually open."
+### "Is this Delft3D?"
+No, and every surface says so: *FloodGuard-SWE (Delft3D-class FV solver)*. A
+complete D-Flow FM input deck is generated as an export; it runs when a
+licensed `dflowfm` is present.
 
-Click **Generate Report (PDF)**. Open it.
+### "Why only complete dam break?"
+> "Overtopping is still the same computation as a complete break in our
+> breach model, so we list it as 'not modelled distinctly yet' rather than show
+> the same numbers under another name. A partial breach *is* modelled — you set
+> how deep the breach cuts as a fraction of the dam height, and the pool below
+> that stays behind — but it runs live, not as a preset, because that fraction
+> is your assumption: no published model predicts it, and the result says so."
 
-> "Six pages. Headline results, arrival sorted by lead time, all three breach
-> predictions with their spread, exposure with every 'not computed' reason
-> printed, the verification table, and a provenance block with the git commit
-> on every page."
+### "How accurate are the depths at the towns?"
+> "The towns' rows are taken on the traced channel; when a town sits kilometres
+> off it — Rishikesh 2.3 km, Haridwar 7.1 km — the run says the depth is a
+> valley depth, not a street depth. At 120 m, a narrow gorge like Devprayag's
+> is averaged into large cells, so peak depths there are an upper-range
+> estimate we haven't checked against an independent study. The 30 m run is the
+> publication setting."
 
-Scroll to section 8.
+### "What about river blockages — landslide dams?"
+> "A natural blockage is its own dam type: the embankment breach formulas don't
+> apply, so we require the breach size and timing as inputs and cross-check the
+> routed peak against Costa's 1985 USGS regression for landslide dams. The
+> barrier is raised into the terrain the solver runs on, wall to wall across
+> the valley, so the flood can't spill back into the empty lake bed, and the
+> lake's storage is counted above the river's pre-event surface. It's tested on
+> real terrain with a hypothetical barrier; it's not in the preset list."
 
-> "The caveats are in the body, not an appendix — including that the reservoir
-> bathymetry is reconstructed rather than surveyed. A report that buries its
-> limitations behind the maps is a report that gets quoted without them."
-
----
-
-Point at the **Early Warning** panel on the right.
-
-> "This is what the district control room actually needs: each town gets a
-> level — Devprayag red, evacuate now — its lead time, and the nearest ground
-> that stays at least two metres above the computed flood, with the direction.
-> The green dashed lines on the map are those routes, as the crow flies — we
-> say it's straight-line, not a road route."
-
-Click **बुलेटिन (हिंदी)**, then **CAP 1.2 alert**.
-
-> "The bulletin in Hindi, SMS texts sized to real SMS segments, and a Common
-> Alerting Protocol file — the standard NDMA's SACHET system is built on. It
-> is marked Exercise; the tool refuses to issue an Actual alert, because that's
-> an authority's call, not software's."
-
-Click **Share link**.
-
-> "A short link that reopens this exact view — run, layer, frame. Short enough
-> to send by SMS to a district control room."
-
-## 4:15 — 5:00 · Generality and close
-
-Change the scenario dropdown to **Hirakud — Mahanadi**. Then flip the source to
-**Any catalog dam** and open the dropdown.
-
-> "Or any of the thirty dams in the CWC register — the DEM is fetched on the
-> first run. And under Upload Custom Data, an agency can bring its own DEM, its
-> own design hydrograph, or its district boundary; a file with no CRS, or a
-> discharge column in cusecs, is refused with the reason, not silently
-> converted."
-
-> "Same code, different YAML. Tehri is 260 metres of head in a gorge: steep,
-> fast, minutes of warning. Hirakud is 61 metres behind a 4.8 km embankment on
-> a deltaic plain: twice the storage, a slower wave, hours of warning, far
-> wider spread. Adding a dam is a file, not a code change."
-
-Close with:
-
-> "Thirty dams from the CWC register, each attribute cited to a page of a
-> government PDF. A solver verified against analytical solutions. Honest labels
-> where a third-party engine isn't installed. And a report a district disaster
-> management officer could actually file."
-
----
-
-## The three questions judges will ask
-
-### 1. "Is this really Delft3D?"
-
-**No, and the screen says so.**
-
-> "Delft3D binaries aren't installed on this laptop. `/api/health/engines`
-> probes for them, finds nothing, and every surface — the badge, the API
-> response, the PDF cover — reads *FloodGuard-SWE, Delft3D-class FV solver*.
-> There's a test in the suite that fails if any code path emits the string
-> 'Delft3D' without a verified binary run."
-
-Then turn it into a positive:
-
-> "What we *do* generate is a complete, runnable D-Flow FM input deck — the
-> UGRID network file, the .mdu, the boundary polyline, the .bc with the breach
-> hydrograph, the DIMR config — from a DEM and a dam record. It's in the
-> exports. That's days of work for a hydraulics team, and it runs the moment
-> you point it at a licensed solver."
-
-### 1½. "You said two engines — isn't that the same code twice?"
-
-> "No. FloodGuard-SWE is Eulerian: a fixed grid, a Riemann solver at every
-> face. FloodGuard-SPH is Lagrangian: water is 120,000 particles of fixed
-> volume, depth is a kernel sum, there is no face and no Riemann solver. They
-> share the DEM, the breach hydrograph and the equations — which is the point:
-> the difference between them is numerical uncertainty, measured."
-
-### 2. "How do I know the numbers are right?"
-
-Two answers, in this order.
-
-> "The numerics, we can prove: seven checks against exact analytical solutions,
-> Ritter at 0.503% L2. `make validate` runs them in under a minute."
-
-> "The inputs, we can't prove — so we qualify them. The reservoir bathymetry is
-> reconstructed, not surveyed; the DEM is a surface model that reads canopy top;
-> Manning's n is uniform without a land-cover raster. Each of those is a warning
-> attached to the run, and each appears in the report. The one independent check
-> we do have is that the reconstructed reservoir bed lands within 2 metres of
-> crest elevation minus the registered dam height — two completely separate data
-> paths agreeing."
-
-### 3. "Does it work for any river, or just the one you tuned?"
-
-> "Adding a dam is a YAML file. The two demo scenarios are deliberately opposite
-> regimes — a 260 m Himalayan gorge and a 61 m deltaic embankment — and the same
-> code runs both. The catalog has 30 dams across 25 rivers."
-
-If pressed on what would break:
-
-> "Honestly: a dam whose FRL isn't in the NRLD. We refuse to run rather than
-> guess a reservoir level, so you'd get a 422 telling you to supply it. And a
-> concrete arch dam, where all three breach models are marked inapplicable —
-> they're embankment-erosion regressions and a concrete dam fails by structural
-> collapse. We flag it rather than returning a number that looks authoritative."
+### "Two engines?"
+> "The second engine, FloodGuard-SPH, is verified on analytical cases, but one
+> of its checks currently fails after a settings change, so the presets use the
+> finite-volume engine only. We show that failure in the validation table
+> rather than hide it."
 
 ---
 
@@ -274,12 +199,12 @@ If pressed on what would break:
 
 | Symptom | Do this |
 | --- | --- |
-| Backend unreachable | `make serve-backend`; Home shows a clear error, not a blank page |
-| No venue Wi-Fi | Everything after `make data` is offline. Use a precomputed run |
-| A live run is slow | Say why: 30 m over 120 km is ~50,000 timesteps. Switch to 90 m and say that resolution is exposed because peak depths genuinely depend on it |
-| Exposure cards all show dashes | Correct behaviour — OSM/WorldPop weren't fetched. Say so; it's the rule working |
-| Someone asks "is that real SPH?" | Yes — Lagrangian particles, Wendland kernel, Monaghan viscosity, verified against Ritter and Stoker. It is *depth-integrated* SPH, not a 3D WCSPH of the breach face; the label says so. PySPH/DualSPHysics would add the 3D near field, and the DualSPHysics CaseDef is generated |
-| Comparison tab is empty | The loaded run had one engine. Pick a run in Demo Mode whose label shows `swe_fv + sph_swe` |
-| 3D tab says "no bed.tif" | The run predates the 3D view; load a newer run |
+| A preset shows "not precomputed yet" | The pack wasn't imported on this machine: `python -m floodguard.cli pack import floodguard_demo_presets_120m.fgpack` |
+| Loss-of-life says "not computed" | Normal for a warning time other than −60/0/+60 min on a laptop without the WorldPop raster; use one of the three offered |
+| Quick estimate is slow | It downloads the DEM for a new dam on first use (needs internet). Use a bundled scenario |
+| Comparison tab is empty | Presets are single-engine by design; say so |
 
-**Never** run a fresh full-resolution simulation live. Load a precomputed run.
+**Never** start a full-resolution run live. Use a preset, or the quick estimate.
+If a live run is taking too long, press **Stop run**: the run's process is ended
+at once and nothing from it is shown. Restarting the server does not kill a
+running estimate; it is picked up again when the server comes back.

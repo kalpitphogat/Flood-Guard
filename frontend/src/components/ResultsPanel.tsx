@@ -351,7 +351,8 @@ export function ExportPanel({ runId }: { runId: string | null }) {
     { format: 'pdf', label: 'Generate Report (PDF)', tone: 'bg-slate-600 hover:bg-slate-700' },
   ]
   const more = [
-    { format: 'kmz', label: 'KMZ (animated in Google Earth)' },
+    { format: 'kmz', label: 'KMZ (max extent by arrival time)' },
+    { format: 'wave_kmz', label: 'Wave animation KMZ (per frame)' },
     { format: 'velocity_tif', label: 'Velocity .TIF' },
     { format: 'arrival_tif', label: 'Arrival time .TIF' },
     { format: 'hazard_tif', label: 'Hazard (D×V) .TIF' },

@@ -23,7 +23,14 @@ import type {
   WarningBulletin,
   FramesResponse,
   LegendBin,
+  DatasetCatalog,
+  GaugesResponse,
+  RunProvenance,
+  Sensitivity,
+  SiteRow,
+  LifeLoss,
   MapLayer,
+  PresetCatalog,
   RunListing,
   Scene3DMeta,
   ShareCreated,
@@ -214,6 +221,77 @@ export function useCrossSection(runId: string | null, location: string | null) {
 }
 
 // --- runs, frames, sharing, uploads, 3D, AOI ------------------------------------
+
+/** Graham (1999) loss-of-life estimate for a run, under one warning assumption. */
+export function useLifeLoss(runId: string | null, warningMin: number, understanding: string) {
+  return useQuery({
+    queryKey: ['result', runId, 'life-loss', warningMin, understanding],
+    queryFn: () =>
+      api<LifeLoss>(
+        `/api/results/${runId}/life-loss?warning_issued_min=${warningMin}&understanding=${understanding}`,
+      ),
+    enabled: !!runId,
+    retry: false,
+  })
+}
+
+/** One-at-a-time breach outflow sensitivity for a run. */
+export function useSensitivity(runId: string | null) {
+  return useQuery({
+    queryKey: ['result', runId, 'sensitivity'],
+    queryFn: () => api<Sensitivity>(`/api/results/${runId}/sensitivity`),
+    enabled: !!runId,
+    retry: false,
+    staleTime: Infinity,
+  })
+}
+
+/** Which dams this install can model, with computed readiness. */
+export function useRegistry() {
+  return useQuery({
+    queryKey: ['registry'],
+    queryFn: () => api<{ sites: SiteRow[]; note: string }>('/api/registry'),
+    staleTime: 30_000,
+  })
+}
+
+/** Every number's origin for a run, with its honesty labels. */
+export function useProvenance(runId: string | null) {
+  return useQuery({
+    queryKey: ['result', runId, 'provenance'],
+    queryFn: () => api<RunProvenance>(`/api/results/${runId}/provenance`),
+    enabled: !!runId,
+    retry: false,
+  })
+}
+
+/** Depth-time curves at each town and at the river beside it. */
+export function useGauges(runId: string | null) {
+  return useQuery({
+    queryKey: ['result', runId, 'gauges'],
+    queryFn: () => api<GaugesResponse>(`/api/results/${runId}/gauges`),
+    enabled: !!runId,
+    retry: false,
+  })
+}
+
+/** Datasets on this machine, grouped by source, with licences. */
+export function useDatasets() {
+  return useQuery({
+    queryKey: ['datasets'],
+    queryFn: () => api<DatasetCatalog>('/api/datasets'),
+    staleTime: 60_000,
+  })
+}
+
+/** Precomputed presets and the quick-estimate settings. */
+export function usePresets() {
+  return useQuery({
+    queryKey: ['presets'],
+    queryFn: () => api<PresetCatalog>('/api/presets'),
+    staleTime: 30_000,
+  })
+}
 
 export function useRuns() {
   return useQuery({

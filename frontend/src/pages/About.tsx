@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
-import { useEngines } from '../api/hooks'
+import { useDatasets, useEngines } from '../api/hooks'
 import { EngineBadge, Panel, Skeleton, formatNumber } from '../components/Value'
 
 interface ValidationCheck {
@@ -195,6 +195,8 @@ export default function About() {
         </li>
       </ol>
 
+      <DatasetsSection />
+
       {/* --- documentation --- */}
       <h2 className="mt-8 text-base font-semibold text-slate-900">Documentation</h2>
       <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[13px]">
@@ -227,5 +229,44 @@ export default function About() {
         formats, with no source copied into this repository.
       </p>
     </div>
+  )
+}
+
+
+/** Datasets on this machine, grouped by source, each with its licence. */
+function DatasetsSection() {
+  const q = useDatasets()
+  return (
+    <>
+      <h2 className="mt-8 text-base font-semibold text-slate-900">Datasets on this machine</h2>
+      {q.isLoading && <Skeleton className="h-16" />}
+      {q.data && (
+        <>
+          <p className="mt-1 text-[12px] text-slate-500">{q.data.note}</p>
+          {q.data.sources.length > 0 && (
+            <table className="mt-2 w-full text-left text-[12px]">
+              <thead>
+                <tr className="border-b border-slate-200 text-slate-500">
+                  <th className="py-1 pr-2">Source</th>
+                  <th className="py-1 pr-2">Files</th>
+                  <th className="py-1 pr-2">Size</th>
+                  <th className="py-1">Licence / attribution</th>
+                </tr>
+              </thead>
+              <tbody>
+                {q.data.sources.map((s) => (
+                  <tr key={s.source} className="border-b border-slate-100 align-top">
+                    <td className="py-1 pr-2 font-medium text-slate-800">{s.source}</td>
+                    <td className="py-1 pr-2">{s.files}</td>
+                    <td className="py-1 pr-2">{formatNumber(s.total_bytes / 1e6, 1)} MB</td>
+                    <td className="py-1 text-slate-600">{s.licences.join(' · ') || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
+    </>
   )
 }

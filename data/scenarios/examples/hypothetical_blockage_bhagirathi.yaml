@@ -1,0 +1,118 @@
+# FloodGuard India — EXAMPLE river-blockage scenario (HYPOTHETICAL)
+#
+# This file exercises the landslide-dam path end to end on real terrain. It is
+# NOT an assessment of any real slope, landslide or hazard: the barrier's
+# location, height, lake level and breach geometry below are ILLUSTRATIVE
+# INPUTS chosen to test the machinery, and every output of a run made from
+# this file must be read as such.
+#
+# It lives in data/scenarios/examples/ on purpose, so the dashboard does not
+# list it next to the two real dams. Run it from the CLI:
+#
+#   python -m floodguard.cli simulate \
+#       --scenario data/scenarios/examples/hypothetical_blockage_bhagirathi.yaml \
+#       --resolution 120 --duration 3
+#
+# What is real: the terrain (Copernicus GLO-30, pre-event valley, so the lake
+# storage comes straight from the DEM with no bathymetry reconstruction), the
+# towns and their populations, and the peak cross-check (Costa 1985, USGS
+# OFR 85-560, landslide-dam regression). What is NOT: everything about the
+# barrier itself.
+
+id: hypothetical_blockage_bhagirathi
+name: "HYPOTHETICAL landslide blockage — Bhagirathi below Tehri (machinery test)"
+description: >
+  Illustrative 60 m landslide barrier across the Bhagirathi about 25 km
+  downstream of Tehri Dam (point taken on FloodGuard's own traced flow path),
+  failing by overtopping erosion. Inputs are hypothetical; see the file header.
+
+scenario_type: landslide_dam_breach
+
+dam:
+  id: hypothetical_blockage_bhagirathi
+  name: "HYPOTHETICAL BLOCKAGE (illustrative)"
+  river: Bhagirathi
+  state: Uttarakhand
+  lon: 78.55971
+  lat: 30.20787
+  dam_type: natural_blockage
+  structural_height_m: 60.0
+  crest_elevation_m: 580.0
+  frl_m: 578.0
+  sources:
+    lon: "ILLUSTRATIVE: a cell on FloodGuard's traced Bhagirathi flow path, ~25 km below Tehri Dam."
+    lat: "ILLUSTRATIVE: as lon."
+    structural_height_m: "ILLUSTRATIVE input, not a measured barrier."
+    crest_elevation_m: "ILLUSTRATIVE: river bed at the point (~520 m on the 120 m DEM) plus 60 m."
+    frl_m: "ILLUSTRATIVE: lake 2 m below the barrier crest at the moment of failure."
+
+breach:
+  shape: trapezoidal
+  growth: linear
+  side_slope: 1.0
+  # A natural blockage REQUIRES these two: the embankment regressions do not
+  # apply to landslide dams, so FloodGuard refuses to fill them in.
+  width_m: 120.0
+  formation_time_min: 60.0
+  parameter_model: froehlich_2008
+
+reservoir:
+  initial_level_m: 578.0
+  inflow_m3s: 0.0
+  spillway_active: false
+
+blockage:
+  burn_into_dem: true
+  # base_length_m: not given -> two cells, labelled a numerical minimum.
+
+domain:
+  reach_length_km: 80.0
+  corridor_buffer_km: 5.0
+  reservoir_buffer_km: 15.0
+  resolution_m: 120.0
+  crs: "EPSG:32644"
+
+solver:
+  duration_hours: 3.0
+  cfl: 0.45
+  dry_tolerance_m: 0.001
+  wet_threshold_m: 0.3
+  output_interval_s: 300.0
+  default_manning_n: 0.035
+  manning_n_overrides:
+    channel: 0.030
+    forest: 0.100
+    urban: 0.080
+    agriculture: 0.050
+    bare: 0.025
+  second_order: true
+
+dem:
+  sources: [copernicus_s3, planetary_computer, opentopography]
+  resolution_m: 30.0
+
+towns:
+  - name: Devprayag
+    lon: 78.5980
+    lat: 30.1460
+    population: 2152
+    population_source: "Census of India 2011, town directory"
+  - name: Rishikesh
+    lon: 78.2676
+    lat: 30.0869
+    population: 102138
+    population_source: "Census of India 2011"
+
+engines: [swe_fv]
+
+notes:
+  - >
+    HYPOTHETICAL. Barrier location, height, lake level and breach geometry are
+    illustrative inputs for testing the river-blockage path, not an assessment.
+  - >
+    The lake volume is read from the pre-event DEM behind the barrier point, so
+    it is storage above the pre-event water surface. The barrier itself is
+    burned into the solver's DEM across the valley up to the crest (blockage
+    section below); its along-river thickness is a two-cell numerical minimum,
+    not a measured base length. Landslide debris spread downstream of the
+    barrier is not modelled.

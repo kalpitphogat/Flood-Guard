@@ -59,6 +59,16 @@ reservoir:
   initial_level_m: 830.0        # at FRL — the worst credible case
   inflow_m3s: 0.0
   spillway_active: false
+  # Copernicus GLO-30 was acquired after impoundment (2006), so it samples the
+  # lake SURFACE, not the drowned valley floor. At 120 m the DEM-derived curve
+  # held 565 MCM at FRL against the NRLD 3,540 MCM (-84%) and almost nothing
+  # at MDDL, and the bathymetry reconstruction was refused (bed below the dam's
+  # foundation). Supplying the published surface area lets the reconstruction
+  # run, exactly as for Hirakud.
+  area_at_frl_km2: 52.0
+  area_source: >
+    CWC NRLD-2019, Uttarakhand p.263 (PIC UA34VH0012), reservoir area field
+    (52 km2), as transcribed in data/catalog/dams.geojson.
 
 domain:
   reach_length_km: 120.0        # Tehri -> Devprayag -> Rishikesh -> Haridwar

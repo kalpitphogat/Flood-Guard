@@ -306,11 +306,27 @@ def route(
             q_half = weir_outflow(half_level, half_state, tailwater_m)
 
         q_half_in = inflow_fn(t + dt / 2.0)
-        net_half = q_half_in - q_half - q_spill
 
-        storage = max(storage + net_half * dt, 0.0)
+        # A step may not release more water than the reservoir holds. Without
+        # this limit, a curve whose lowest sample sits above the breach invert
+        # (a DSM that saw the lake surface, not the valley floor) keeps the
+        # level pinned there once storage hits zero, and the weir equation
+        # goes on releasing water that does not exist: a 3,540 MCM reservoir
+        # was measured releasing 31,478 MCM before this was fixed.
+        available = storage + q_half_in * dt
+        released = (q_half + q_spill) * dt
+        q_spill_used = q_spill
+        emptied = False
+        if released > available:
+            scale = available / released if released > 0 else 0.0
+            q_half *= scale
+            q_spill_used = q_spill * scale
+            released = available
+            emptied = True
+
+        storage = max(available - released, 0.0)
         level = curve.level_at_volume(storage)
-        volume_out += (q_half + q_spill) * dt
+        volume_out += released
         volume_in += q_half_in * dt
         t += dt
 
@@ -324,6 +340,16 @@ def route(
         # outflow has effectively ceased.
         if t > formation_s and q_half < 1.0 and level <= bstate.invert_m + 0.01:
             log.info("reservoir drained to the breach invert at t=%.0f s", t)
+            break
+        if emptied and q_half_in <= 0.0:
+            log.info("reservoir storage exhausted at t=%.0f s", t)
+            if not any("storage was exhausted" in w for w in warnings):
+                warnings.append(
+                    f"The reservoir storage was exhausted at t={t / 60:.0f} min while the "
+                    f"curve's lowest level ({curve.levels_m[0]:.1f} m) is still above the "
+                    f"breach invert ({bstate.invert_m:.1f} m). The elevation-storage curve "
+                    f"does not reach the invert, so outflow was limited to the stored volume."
+                )
             break
 
     if steps >= max_steps:
@@ -344,7 +370,10 @@ def route(
             f"Released volume and storage change disagree; treat the hydrograph as suspect."
         )
 
-    if q[-1] > 0.05 * q[peak_i]:
+    # After storage is exhausted the boundary returns 0 (q_at uses right=0), so a
+    # non-zero last sample then is the final partial step, not an undrained pool.
+    exhausted = any("storage was exhausted" in w for w in warnings)
+    if q[-1] > 0.05 * q[peak_i] and not exhausted:
         warnings.append(
             f"The hydrograph is still at {q[-1] / q[peak_i] * 100:.0f}% of peak when the "
             f"simulation window ends at {duration_s / 3600:.1f} h. The reservoir has not "

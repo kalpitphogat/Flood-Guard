@@ -20,9 +20,11 @@ The method is the standard one, with the corrections that matter:
 4. **Permanent water excluded** using the JRC Global Surface Water occurrence
    layer. Without this, every river and reservoir in the scene is reported as
    flooding, which inflates the detected area enormously.
-5. **Terrain shadow masked** using the local incidence angle computed from the
-   DEM. Radar shadow on a steep slope is as dark as water and is the dominant
-   false positive in Himalayan terrain — exactly where our Tehri demo is.
+5. **Layover and shadow masked per scene** (floodguard/data/sar_geometry.py,
+   Vollrath et al. 2020 geometric masks), from each scene's own incidence-angle
+   band and look direction, BEFORE the threshold. Radar shadow on a steep slope
+   is as dark as water and is the dominant false positive in Himalayan terrain.
+   The fraction of the area the radar could actually image is reported.
 
 Honest status
 -------------
@@ -48,14 +50,14 @@ log = logging.getLogger(__name__)
 S1_GRD = "COPERNICUS/S1_GRD"
 S2_SR = "COPERNICUS/S2_SR_HARMONIZED"
 JRC_GSW = "JRC/GSW1_4/GlobalSurfaceWater"
-COP_DEM = "COPERNICUS/DEM/GLO30"
+#: GLO30 was superseded in Earth Engine by the 2024_1 release (same DEM band);
+#: the old id raises a deprecation warning.
+COP_DEM = "COPERNICUS/DEM/GLO30_2024_1"
 CHIRPS = "UCSB-CHG/CHIRPS/DAILY"
 
 #: JRC occurrence above this percentage counts as permanent water.
 PERMANENT_WATER_OCCURRENCE = 50
 
-#: Sentinel-1 IW nominal incidence angle, used for the shadow/layover geometry.
-S1_NOMINAL_INCIDENCE_DEG = 39.0
 
 
 class GEEUnavailable(RuntimeError):
@@ -97,9 +99,34 @@ class FloodDetection:
         }
 
 
+#: The repository's .env (git-ignored). Read as a fallback so the CLI and the
+#: API see the same Earth Engine settings without exporting variables by hand.
+_DOTENV = Path(__file__).resolve().parents[3] / ".env"
+
+
+def _setting(name: str) -> str:
+    """An environment variable, else the same key in the repository's .env."""
+    value = os.environ.get(name, "").strip()
+    if value or not _DOTENV.is_file():
+        return value
+    try:
+        for line in _DOTENV.read_text(encoding="utf-8").splitlines():
+            key, sep, raw = line.partition("=")
+            if sep and key.strip() == name and not key.strip().startswith("#"):
+                return raw.strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return ""
+
+
 def credentials_path() -> str | None:
-    path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+    path = _setting("GOOGLE_APPLICATION_CREDENTIALS")
     return path if path and Path(path).exists() else None
+
+
+def project_id() -> str | None:
+    """The Google Cloud project registered for Earth Engine (EE_PROJECT)."""
+    return _setting("EE_PROJECT") or None
 
 
 def is_configured() -> bool:
@@ -134,6 +161,7 @@ def status() -> dict[str, Any]:
         "configured": has_package and has_credentials,
         "package_installed": has_package,
         "credentials_present": has_credentials,
+        "project": project_id(),
         "detail": detail,
         "collections": {
             "sentinel1": S1_GRD,
@@ -166,7 +194,7 @@ def initialise(project: str | None = None):
         with open(key, encoding="utf-8") as fh:
             service_account = json.load(fh).get("client_email")
         credentials = ee.ServiceAccountCredentials(service_account, key)
-        ee.Initialize(credentials, project=project)
+        ee.Initialize(credentials, project=project or project_id())
     except Exception as exc:  # noqa: BLE001
         raise GEEUnavailable(f"Earth Engine initialisation failed: {exc}") from exc
 
@@ -190,7 +218,10 @@ def refined_lee(image, kernel_size: int = 5):
     import ee
 
     band = image.bandNames().get(0)
-    img = image.select([band])
+    # Speckle is MULTIPLICATIVE in linear power, so the local statistics must be
+    # taken there; the collection is in dB (10*log10), so convert, filter, convert
+    # back. Filtering dB values directly biases the result.
+    img = ee.Image(10.0).pow(image.select([band]).divide(10.0))
     kernel = ee.Kernel.square(kernel_size, "pixels")
 
     mean = img.reduceNeighborhood(ee.Reducer.mean(), kernel)
@@ -203,44 +234,7 @@ def refined_lee(image, kernel_size: int = 5):
     weight = ci2.subtract(cu2).divide(ci2).max(0)
 
     filtered = mean.add(weight.multiply(img.subtract(mean)))
-    return filtered.rename([band]).copyProperties(image, ["system:time_start"])
-
-
-def local_incidence_angle(dem=None):
-    """Local incidence angle from terrain, in degrees.
-
-    Sentinel-1 is right-looking. Slopes facing away from the sensor go into
-    radar shadow and return almost nothing — as dark as open water. On
-    Himalayan terrain that is the dominant false positive, so masking by local
-    incidence angle is not an optional refinement here, it is the difference
-    between a usable map and a map of mountainsides.
-    """
-    import ee
-
-    dem = dem or ee.Image(COP_DEM).select("DEM")
-    terrain = ee.Algorithms.Terrain(dem)
-    slope = terrain.select("slope").multiply(3.14159265 / 180.0)
-    aspect = terrain.select("aspect").multiply(3.14159265 / 180.0)
-
-    # Look azimuth: heading plus 90 degrees for a right-looking sensor. Using
-    # the nominal descending heading; a per-scene value is better where the
-    # orbit metadata is available.
-    look_azimuth = ee.Image(ee.Number(-12.0 + 90.0).multiply(3.14159265 / 180.0))
-    incidence = ee.Image(S1_NOMINAL_INCIDENCE_DEG).multiply(3.14159265 / 180.0)
-
-    cos_lia = (
-        incidence.cos().multiply(slope.cos())
-        .subtract(
-            incidence.sin().multiply(slope.sin()).multiply(aspect.subtract(look_azimuth).cos())
-        )
-    )
-    return cos_lia.acos().multiply(180.0 / 3.14159265).rename("lia")
-
-
-def terrain_mask(dem=None, min_angle: float = 20.0, max_angle: float = 70.0):
-    """True where the local incidence angle is usable for water detection."""
-    lia = local_incidence_angle(dem)
-    return lia.gt(min_angle).And(lia.lt(max_angle))
+    return filtered.log10().multiply(10.0).rename([band])
 
 
 def permanent_water_mask():
@@ -251,7 +245,14 @@ def permanent_water_mask():
     """
     import ee
 
-    return ee.Image(JRC_GSW).select("occurrence").gt(PERMANENT_WATER_OCCURRENCE)
+    # `occurrence` is MASKED wherever water was never observed. Without unmask(0)
+    # "not permanent water" is masked on all dry land, and any And() with it
+    # silently limited detection to ground that had been water before (found on
+    # the South Lhonak test: new-water area collapsed to the old lake footprint).
+    return (
+        ee.Image(JRC_GSW).select("occurrence").unmask(0)
+        .gt(PERMANENT_WATER_OCCURRENCE).rename("occurrence")
+    )
 
 
 def otsu_threshold(histogram):
@@ -290,9 +291,86 @@ def otsu_threshold(histogram):
     return means.sort().get([best])
 
 
-def sentinel1_collection(aoi, start: str, end: str, polarisation: str = "VV"):
-    """Sentinel-1 GRD IW scenes over an AOI, speckle-filtered."""
+def copernicus_dem():
+    """Copernicus GLO-30 as one image, keeping its native 30 m projection.
+
+    A mosaic otherwise falls back to a default 1-degree projection, and slope
+    and aspect computed from it would be computed on the wrong grid.
+    """
     import ee
+
+    col = ee.ImageCollection(COP_DEM).select("DEM")
+    return col.mosaic().setDefaultProjection(col.first().projection())
+
+
+#: Half-width of the band around the historical water edge (JRC max_extent) in
+#: which the Otsu histogram is taken, m. A FloodGuard choice, not a published
+#: value; on the South Lhonak test the threshold moved only 0.4 dB between 100,
+#: 200 and 400 m (-13.1 / -13.5 / -13.1 dB), so the result is not tuned by it.
+EDGE_BUFFER_M = 200.0
+#: Fewest edge-band pixels for a usable histogram (a numerical minimum).
+MIN_EDGE_PIXELS = 100
+EDGE_OTSU_REFERENCE = (
+    "Otsu (1979) on a band around the known water edge, after Donchyts et al. "
+    "(2016), Remote Sensing 8(5):386 — a whole-scene histogram fails when water "
+    "is a small fraction of the scene"
+)
+
+
+def water_threshold(image, band: str, aoi, scale_m: float):
+    """Otsu threshold taken near the historical water edge; whole AOI as fallback.
+
+    Returns (threshold ee.Number, method ee.String). Otsu assumes two classes of
+    comparable size; over a whole valley water is a few percent of the pixels
+    and the split lands inside the land distribution (South Lhonak: -10.7 dB
+    over the box vs -13.5 dB near the shore; lake mean -17.8, land -9.4 dB).
+    """
+    import ee
+
+    ever = ee.Image(JRC_GSW).select("max_extent").unmask(0).clip(aoi)
+    edge = ever.focalMax(1).subtract(ever.focalMin(1)).gt(0)
+    band_mask = edge.focalMax(EDGE_BUFFER_M, "circle", "meters")
+    near = image.select([band]).updateMask(band_mask)
+    count = ee.Number(
+        near.reduceRegion(ee.Reducer.count(), aoi, scale_m, maxPixels=1e9).get(band)
+    )
+
+    def otsu(img):
+        hist = img.reduceRegion(ee.Reducer.histogram(255, 0.1), aoi, scale_m,
+                                maxPixels=1e9).get(band)
+        return ee.Number(otsu_threshold(hist))
+
+    use_edge = count.gte(MIN_EDGE_PIXELS)
+    threshold = ee.Number(ee.Algorithms.If(use_edge, otsu(near), otsu(image.select([band]))))
+    method = ee.String(ee.Algorithms.If(
+        use_edge,
+        f"Otsu within {EDGE_BUFFER_M:.0f} m of the historical water edge",
+        "Otsu over the whole area (no historical water edge nearby) — may split land "
+        "from land where water is a small fraction",
+    ))
+    return threshold, method
+
+
+def sentinel1_collection(aoi, start: str, end: str, polarisation: str = "VV"):
+    """Sentinel-1 GRD IW scenes over an AOI: speckle-filtered, layover/shadow masked.
+
+    Each scene is masked with its OWN geometry before any mosaic, because an
+    ascending and a descending scene see opposite slopes in shadow.
+    """
+    import ee
+
+    from floodguard.data import sar_geometry
+
+    dem = copernicus_dem()
+
+    def prepare(image):
+        filtered = refined_lee(image.select([polarisation]))
+        geom = sar_geometry.geometry_bands(image, dem, aoi)
+        return (
+            filtered.updateMask(geom.select("valid"))
+            .addBands(geom.select("valid").unmask(0).rename("imaged"))
+            .copyProperties(image, ["system:time_start", "system:index", "orbitProperties_pass"])
+        )
 
     collection = (
         ee.ImageCollection(S1_GRD)
@@ -300,9 +378,8 @@ def sentinel1_collection(aoi, start: str, end: str, polarisation: str = "VV"):
         .filterDate(start, end)
         .filter(ee.Filter.listContains("transmitterReceiverPolarisation", polarisation))
         .filter(ee.Filter.eq("instrumentMode", "IW"))
-        .select(polarisation)
     )
-    return collection.map(refined_lee)
+    return collection.map(prepare)
 
 
 def detect_flood(
@@ -355,19 +432,13 @@ def detect_flood(
             f"extent as an upper bound."
         )
 
-    post_image = post.mosaic().clip(aoi)
+    post_image = post.select(polarisation).mosaic().clip(aoi)
+    imaged_fraction = _imaged_fraction(post, aoi, scale_m)
 
     # Otsu on the post-event image unless the caller pinned a threshold.
     if threshold_db is None:
-        histogram = post_image.reduceRegion(
-            reducer=ee.Reducer.histogram(255, 0.1),
-            geometry=aoi,
-            scale=scale_m * 3,
-            maxPixels=1e9,
-            bestEffort=True,
-        ).get(polarisation)
-        threshold = ee.Number(otsu_threshold(histogram))
-        threshold_method = "Otsu, computed per scene"
+        threshold, method = water_threshold(post_image, polarisation, aoi, scale_m)
+        threshold_method = method.getInfo()
     else:
         threshold = ee.Number(threshold_db)
         threshold_method = f"fixed at {threshold_db} dB by request"
@@ -376,12 +447,13 @@ def detect_flood(
 
     if pre_count > 0:
         # Change detection: water now that was not water before.
-        pre_image = pre.mosaic().clip(aoi)
+        pre_image = pre.select(polarisation).mosaic().clip(aoi)
         was_water = pre_image.lt(threshold)
         water = water.And(was_water.Not())
 
     water = water.And(permanent_water_mask().Not())
-    water = water.And(terrain_mask())
+    # Layover/shadow are already masked per scene (sentinel1_collection): a
+    # pixel no scene could image stays masked, never "dry".
     water = water.selfMask().rename("flooded")
 
     pixel_area = ee.Image.pixelArea()
@@ -411,6 +483,14 @@ def detect_flood(
         warnings.append(f"the flood extent could not be vectorised: {exc}")
 
     rainfall = _rainfall_series(ee, aoi, pre_start, post_end)
+    if imaged_fraction is not None and imaged_fraction < 1.0:
+        warnings.append(
+            f"The radar could image {imaged_fraction:.0%} of this area in the post-event "
+            f"scenes; the rest was in layover or radar shadow in every scene. Water there "
+            f"is UNOBSERVED, not absent."
+        )
+
+    from floodguard.data import sar_geometry
 
     return FloodDetection(
         aoi=aoi_bbox,
@@ -432,14 +512,31 @@ def detect_flood(
             "permanent_water": f"{JRC_GSW} occurrence > {PERMANENT_WATER_OCCURRENCE}%",
             "dem": COP_DEM,
             "speckle_filter": "refined Lee, 5x5",
-            "terrain_mask": "local incidence angle between 20 and 70 degrees",
+            "terrain_mask": "per-scene layover/shadow masks: " + sar_geometry.REFERENCE,
+            "imaged_fraction_post": imaged_fraction,
             "scale_m": scale_m,
             "method": (
                 "pre/post change detection on speckle-filtered Sentinel-1 backscatter, "
-                "Otsu threshold, permanent water and terrain shadow excluded"
+                "Otsu threshold, permanent water excluded, layover/shadow masked per scene"
             ),
         },
     )
+
+
+def _imaged_fraction(collection, aoi, scale_m: float) -> float | None:
+    """Share of the AOI that at least one scene imaged (not layover/shadow)."""
+    import ee
+
+    try:
+        value = (
+            collection.select("imaged").max().unmask(0).clip(aoi)
+            .reduceRegion(ee.Reducer.mean(), aoi, max(scale_m, 30) * 3, maxPixels=1e9,
+                          bestEffort=True)
+            .get("imaged").getInfo()
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    return float(value) if value is not None else None
 
 
 def _rainfall_series(ee, aoi, start: str, end: str) -> list[dict[str, Any]]:

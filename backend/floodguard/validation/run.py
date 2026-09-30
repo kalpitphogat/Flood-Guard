@@ -14,6 +14,8 @@ Tests run
 5. **Grid convergence** — error must fall with resolution at close to the
    design order, otherwise the scheme is not doing what it claims.
 6. **Frictional dam break** — the front must lag Ritter's frictionless tip.
+7. **Thacker (1981) parabolic bowl** — moving shoreline over a curved bed; the
+   oscillation period within 5%, with the Nash-Sutcliffe efficiency reported.
 
 The second engine, FloodGuard-SPH, is then held to Ritter and Stoker, exact
 volume and momentum conservation, a measured lake-at-rest residual and
@@ -605,6 +607,12 @@ def check_friction(out_dir: Path, n_cells: int = 600) -> Check:
 # --- runner -----------------------------------------------------------------------
 
 
+def _thacker(out_dir: Path, n_cells: int) -> Check:
+    from floodguard.validation.thacker import check_thacker
+
+    return check_thacker(out_dir, n_cells)
+
+
 def run_validation(out_dir: Path, quick: bool = False) -> int:
     """Run every check, write plots and tables, return a process exit code."""
     out_dir = Path(out_dir)
@@ -628,6 +636,7 @@ def run_validation(out_dir: Path, quick: bool = False) -> int:
         (check_wetdry_mass_budget, (out_dir,)),
         (check_convergence, (out_dir, resolutions)),
         (check_friction, (out_dir,)),
+        (_thacker, (out_dir, 200 if quick else 400)),
     ):
         check = fn(*args)
         report.checks.append(check)

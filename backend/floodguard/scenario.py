@@ -111,6 +111,11 @@ class BreachSpec(BaseModel):
     width_m: float | None = Field(default=None, gt=0)
     #: Vertical extent of the breach below the crest, m. None -> full height.
     depth_m: float | None = Field(default=None, gt=0)
+    #: Breach depth as a fraction of the structural height, for a partial breach.
+    #: A USER ASSUMPTION: no published regression predicts how deep a partial
+    #: breach cuts, so FloodGuard never fills this in and every output that used
+    #: it says so. Mutually exclusive with depth_m.
+    depth_fraction: float | None = Field(default=None, gt=0, le=1)
     #: Horizontal:vertical side slope of the trapezoid.
     side_slope: float = Field(default=1.0, ge=0)
     #: Breach formation time, minutes. None -> predicted.
@@ -142,6 +147,20 @@ class ReservoirState(BaseModel):
     #: area in the reconstruction and the substitution is recorded.
     area_at_frl_km2: float | None = Field(default=None, gt=0)
     area_source: str | None = None
+
+
+class BlockageSpec(BaseModel):
+    """How a natural blockage (dam_type natural_blockage) enters the terrain.
+
+    Ignored for engineered dams, which are already in the DEM.
+    """
+
+    #: Raise the barrier into the DEM the solver runs on. Off reproduces the
+    #: older behaviour (barrier absent, outflow free to spread upstream).
+    burn_into_dem: bool = True
+    #: Barrier footprint along the river, m. None -> two cells, labelled as a
+    #: numerical minimum rather than a barrier dimension.
+    base_length_m: float | None = Field(default=None, gt=0)
 
 
 class DomainSpec(BaseModel):
@@ -248,6 +267,7 @@ class Scenario(BaseModel):
     dam: DamSpec
     breach: BreachSpec = Field(default_factory=BreachSpec)
     reservoir: ReservoirState = Field(default_factory=ReservoirState)
+    blockage: BlockageSpec = Field(default_factory=BlockageSpec)
     domain: DomainSpec = Field(default_factory=DomainSpec)
     solver: SolverSpec = Field(default_factory=SolverSpec)
     dem: DemSpec = Field(default_factory=DemSpec)
@@ -274,6 +294,18 @@ class Scenario(BaseModel):
                 f"breach.depth_m ({self.breach.depth_m}) exceeds the dam's "
                 f"structural_height_m ({self.dam.structural_height_m})"
             )
+        if self.breach.depth_m is not None and self.breach.depth_fraction is not None:
+            raise ValueError(
+                "set either breach.depth_m or breach.depth_fraction, not both"
+            )
+        if self.scenario_type == ScenarioType.PARTIAL_BREACH:
+            if self.breach_depth_m >= self.dam.structural_height_m:
+                raise ValueError(
+                    "a partial breach needs a breach that stops short of the full dam height: "
+                    "set breach.depth_fraction below 1 (or breach.depth_m below "
+                    f"{self.dam.structural_height_m:g} m). No published model predicts this "
+                    "fraction, so FloodGuard will not choose one for you."
+                )
         level = self.reservoir.initial_level_m
         if level is not None and self.dam.crest_elevation_m is not None:
             if level > self.dam.crest_elevation_m:
@@ -302,13 +334,22 @@ class Scenario(BaseModel):
         )
 
     @property
+    def breach_depth_m(self) -> float:
+        """Final breach depth below the crest, m: explicit, fractional, or full height."""
+        if self.breach.depth_m:
+            return self.breach.depth_m
+        if self.breach.depth_fraction:
+            return self.breach.depth_fraction * self.dam.structural_height_m
+        return self.dam.structural_height_m
+
+    @property
     def water_head_m(self) -> float:
         """Head of water above the breach invert, m.
 
         This is the quantity that actually drives the outflow, so it is derived
         once here rather than recomputed differently in each module.
         """
-        breach_depth = self.breach.depth_m or self.dam.structural_height_m
+        breach_depth = self.breach_depth_m
         if self.dam.crest_elevation_m is not None:
             invert = self.dam.crest_elevation_m - breach_depth
             return max(0.0, self.initial_level_m - invert)
@@ -367,6 +408,8 @@ class Scenario(BaseModel):
                 "sources": self.dam.sources,
             },
             "initial_level_m": self.reservoir.initial_level_m,
+            "breach_depth_m": self.breach_depth_m,
+            "breach_depth_fraction": self.breach.depth_fraction,
             "resolution_m": self.domain.resolution_m,
             "crs": self.utm_crs,
             "cfl": self.solver.cfl,

@@ -17,7 +17,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import catalog, health, monitoring, results, simulate, uploads, views, warning
+from app.api import (
+    catalog,
+    datasets,
+    health,
+    monitoring,
+    presets,
+    results,
+    simulate,
+    uploads,
+    views,
+    warning,
+)
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -51,6 +62,8 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(catalog.router)
 app.include_router(simulate.router)
+app.include_router(presets.router)
+app.include_router(datasets.router)
 app.include_router(results.router)
 app.include_router(monitoring.router)
 app.include_router(uploads.router)

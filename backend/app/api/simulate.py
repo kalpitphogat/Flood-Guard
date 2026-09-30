@@ -78,7 +78,7 @@ def build_scenario(request: SimulationRequest):
 
     if request.reservoir_level_m is not None:
         scenario.reservoir.initial_level_m = request.reservoir_level_m
-    for field in ("shape", "growth", "width_m", "depth_m", "side_slope",
+    for field in ("shape", "growth", "width_m", "depth_m", "depth_fraction", "side_slope",
                   "formation_time_min", "parameter_model"):
         value = getattr(request.breach, field)
         if value is not None:
@@ -184,16 +184,104 @@ def _scenario_from_dam(dam_id: str):
 
 @router.post("/api/simulate", response_model=JobCreated)
 def submit(request: SimulationRequest) -> JobCreated:
-    """Queue a simulation. Returns immediately with a job id."""
+    """Queue a simulation. Returns immediately with a job id.
+
+    Three modes:
+
+    * `preset_key` -> the stored precomputed run, returned at once. An unknown or
+      not-yet-computed preset is an error; it never falls back to another run.
+    * `quick=True` -> a live run with the quick-estimate settings forced.
+    * neither      -> the full run exactly as requested (CLI-equivalent).
+    """
+    if request.preset_key:
+        return _submit_preset(request)
+
+    from floodguard import library as lib
+
     scenario = build_scenario(request)
+    run_meta = None
+    mode = "full"
+    if request.quick:
+        scenario = lib.apply_quick_settings(scenario)
+        run_meta = {"run_mode": "quick_estimate", "quick_label": lib.QUICK_LABEL}
+        mode = "quick_estimate"
+
     store = get_store()
     job = store.create(scenario.id, request.model_dump(mode="json"))
-    get_runner().submit(job.id, scenario)
+    get_runner().submit(job.id, scenario, run_meta=run_meta)
     return JobCreated(
         job_id=job.id,
         status=job.status.value,
         scenario_id=scenario.id,
         websocket=f"/ws/jobs/{job.id}",
+        mode=mode,
+        mode_label=lib.QUICK_LABEL if request.quick else None,
+    )
+
+
+def _submit_preset(request: SimulationRequest) -> JobCreated:
+    """Serve a precomputed preset. No solver runs."""
+    from app.core.jobs import JobStatus
+    from floodguard import library as lib
+
+    key = request.preset_key or ""
+    try:
+        scenario_id, stype, level, resolution = lib.parse_key(key)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if request.scenario_id and request.scenario_id != scenario_id:
+        raise HTTPException(
+            status_code=422,
+            detail=f"preset {key!r} belongs to {scenario_id!r}, not {request.scenario_id!r}",
+        )
+
+    settings = get_settings()
+    path = settings.scenarios_dir / f"{scenario_id}.yaml"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"no preset {key!r}: unknown dam")
+    from floodguard.scenario import Scenario
+
+    defined = {
+        p.key: p for p in lib.iter_presets(
+            Scenario.from_yaml(path), include_unmodelled=True, resolution_m=resolution
+        )
+    }
+    preset = defined.get(key)
+    if preset is None:
+        raise HTTPException(status_code=404, detail=f"no preset {key!r}")
+    if not preset.modelled:
+        raise HTTPException(status_code=409, detail=f"preset {key!r}: {lib.not_precomputed_reason(preset.scenario_type)}")
+
+    entry = lib.lookup(settings.floodguard_data_dir, key)
+    if entry is None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"preset {key!r} has not been precomputed on this machine yet. Run "
+                f"`floodguard precompute --scenario {scenario_id}` or import a data pack."
+            ),
+        )
+
+    store = get_store()
+    job = store.create(scenario_id, request.model_dump(mode="json"))
+    store.finish(
+        job.id,
+        JobStatus.SUCCEEDED,
+        result_path=str(lib.result_path(settings.floodguard_data_dir, key)),
+    )
+    completed = entry.get("completed_utc")
+    return JobCreated(
+        job_id=job.id,
+        status=JobStatus.SUCCEEDED.value,
+        scenario_id=scenario_id,
+        websocket=f"/ws/jobs/{job.id}",
+        run_id=preset.run_id,
+        mode="precomputed",
+        mode_label=(
+            f"Precomputed on {completed[:10]} · {resolution:g} m"
+            if completed else f"Precomputed · {resolution:g} m"
+        ),
+        completed_utc=completed,
     )
 
 

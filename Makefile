@@ -9,7 +9,7 @@ FRONTEND_DIR:= frontend
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup setup-pip setup-conda data preprocess validate simulate simulate-both demo test test-backend test-frontend build serve profile-sph lint clean audit
+.PHONY: help setup setup-pip setup-conda data preprocess validate simulate simulate-both precompute demo test test-backend test-frontend build serve profile-sph lint clean audit
 
 help:  ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n",$$1,$$2}'
@@ -36,6 +36,10 @@ validate:  ## Run Ritter/Stoker/lake-at-rest/mass-balance -> docs/validation/
 
 simulate:  ## Headless end-to-end run for SCENARIO
 	$(PYTHON) -m floodguard.cli simulate --scenario data/scenarios/$(SCENARIO).yaml
+
+precompute:  ## Precompute the preset library (120 m, swe_fv) -> data/library/precompute.log
+	@mkdir -p data/library
+	$(PYTHON) -m floodguard.cli precompute --scenario tehri_bhagirathi --scenario hirakud_mahanadi 2>&1 | tee -a data/library/precompute.log
 
 demo:  ## Start backend + frontend on the precomputed demo bundle
 	$(PYTHON) -m floodguard.cli demo

@@ -14,6 +14,13 @@ import {
 } from '../api/hooks'
 import { BreachEnsembleChart, CrossSectionChart, HydrographChart } from '../components/Charts'
 import InputPanel from '../components/InputPanel'
+import GaugesPanel from '../components/GaugesPanel'
+import LifeLossPanel from '../components/LifeLossPanel'
+import ProvenancePanel from '../components/ProvenancePanel'
+import SensitivityPanel from '../components/SensitivityPanel'
+import PlaybackSpeed, { frameIntervalMs } from '../components/PlaybackSpeed'
+import StopButton from '../components/StopButton'
+import RunModeBadge from '../components/RunModeBadge'
 import MapView, { LAYER_TITLES } from '../components/MapView'
 import {
   AoiPanel,
@@ -58,6 +65,7 @@ export default function Simulation() {
     params.get('frame') !== null ? Number(params.get('frame')) : null,
   )
   const [playing, setPlaying] = useState(false)
+  const [speed, setSpeed] = useState(1)
   const [sectionLocation, setSectionLocation] = useState<string | null>(null)
   const [demoMode, setDemoMode] = useState<boolean>(params.get('demo') === '1')
   const [uploads, setUploads] = useState<UploadSelection>({ dem: null, hydrograph: null, aoi: null })
@@ -136,9 +144,9 @@ export default function Simulation() {
         }
         return next
       })
-    }, 700)
+    }, frameIntervalMs(speed))
     return () => window.clearInterval(id)
-  }, [playing, frameTimes.length])
+  }, [playing, frameTimes.length, speed])
 
   const loadRun = (id: string | null) => {
     setRunId(id)
@@ -152,7 +160,18 @@ export default function Simulation() {
   const handleRun = (request: SimulationRequest) => {
     loadRun(null)
     setDemoMode(false)
-    submit.mutate(request, { onSuccess: (data) => setJobId(data.job_id) })
+    submit.mutate(request, {
+      onSuccess: (data) => {
+        // A precomputed preset needs no job socket: its run is already on disk.
+        if (data.mode === 'precomputed' && data.run_id) {
+          setJobId(null)
+          loadRun(data.run_id)
+          runs.refetch()
+        } else {
+          setJobId(data.job_id)
+        }
+      },
+    })
   }
 
   const handleReset = () => {
@@ -304,16 +323,19 @@ export default function Simulation() {
                   </pre>
                 )}
                 {running && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      fetch(`/api/jobs/${jobId}/cancel`, { method: 'POST' }).catch(() => {})
-                    }
-                    className="w-full rounded border border-slate-300 py-1 text-[11px]
-                               text-slate-600 hover:bg-slate-50"
-                  >
-                    Cancel
-                  </button>
+                  <StopButton jobId={jobId} />
+                )}
+                {status === 'cancelled' && (
+                  <p className="text-[10px] text-slate-500" data-testid="stopped-note">
+                    Stopped. The run's process was ended and its partial output discarded —
+                    nothing from it is shown as a result.
+                  </p>
+                )}
+                {status === 'interrupted' && (
+                  <p className="text-[10px] text-amber-800">
+                    Interrupted: the server restarted and this run's worker process was no
+                    longer running. Start it again.
+                  </p>
                 )}
               </div>
             </Panel>
@@ -322,6 +344,17 @@ export default function Simulation() {
 
         {/* ---------------- centre: map ---------------- */}
         <div className="col-span-12 space-y-3 lg:col-span-6">
+          {runId && summary.data && (
+            <div className="flex items-center gap-2">
+              <RunModeBadge summary={summary.data} />
+              <span className="font-mono text-[10px] text-slate-400">{runId}</span>
+            </div>
+          )}
+          {submit.isError && (
+            <p className="rounded border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] text-rose-900">
+              {(submit.error as Error).message}
+            </p>
+          )}
           <section className="overflow-hidden rounded border border-slate-200 bg-white">
             <div className="flex flex-wrap items-center border-b border-slate-200">
               {(
@@ -466,6 +499,11 @@ export default function Simulation() {
                     className="flex-1"
                     aria-label="Simulation time"
                   />
+                  <PlaybackSpeed
+                    speed={speed}
+                    onChange={setSpeed}
+                    disabled={!runId || frameTimes.length === 0}
+                  />
                   <span className="w-28 text-right font-mono text-[11px] text-slate-600">
                     {frame === null ? 'maximum extent' : `t = ${formatMinutes(frameMinutes)}`}
                   </span>
@@ -494,7 +532,9 @@ export default function Simulation() {
           </section>
 
           <HydrographChart runId={runId} />
+          <GaugesPanel runId={runId} />
           <BreachEnsembleChart runId={runId} />
+          <SensitivityPanel runId={runId} />
           <CrossSectionChart
             runId={runId}
             scenario={scenario}
@@ -509,8 +549,10 @@ export default function Simulation() {
           <WarningPanel runId={runId} />
           <AoiPanel runId={runId} uploadId={uploads.aoi} />
           <ImpactPanel runId={runId} />
+          <LifeLossPanel runId={runId} />
           <TownTable runId={runId} />
           <ExportPanel runId={runId} />
+          <ProvenancePanel runId={runId} />
         </div>
       </div>
     </div>

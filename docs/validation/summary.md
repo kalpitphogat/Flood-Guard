@@ -4,23 +4,29 @@ Verification asks whether the code solves the equations it claims to solve.
 These are analytical solutions and closed-form invariants, so the answers are
 exact and the comparison is not a matter of opinion.
 
-**7 of 7 checks passed** (20.4s).
+**12 of 13 checks passed** (5.8s).
 
 | Check | Result | Criterion |
 | --- | --- | --- |
-| Ritter dry-bed dam break | PASS | relative L2 0.503% < 5%, h(dam) error 1.90% < 5%, front lag 21.1% in [0%, 25%) |
-| Stoker wet-bed dam break | PASS | relative L2 1.101% < 5%, shock within 0.1 < 12 cells |
+| Ritter dry-bed dam break | PASS | relative L2 0.305% < 5%, h(dam) error 0.94% < 5%, front lag 18.3% in [0%, 25%) |
+| Stoker wet-bed dam break | PASS | relative L2 0.725% < 5%, shock within 0.4 < 12 cells |
 | Lake at rest over irregular bed (well-balancedness) | PASS | spurious discharge 3.92e-12 < 1e-10, surface drift 1.42e-14 m < 1e-10 |
 | Mass conservation, no wet/dry front | PASS | relative volume error 1.72e-16 < 1e-9 |
-| Wet/dry mass budget (measured cost of drying) | PASS | relative mass loss 0.002% < 1% |
-| Grid convergence (Ritter) | PASS | observed order 0.92 > 0.8 and error decreases with dx |
+| Wet/dry mass budget (measured cost of drying) | PASS | relative mass loss 0.001% < 1% |
+| Grid convergence (Ritter) | PASS | observed order 0.91 > 0.8 and error decreases with dx |
 | Frictional dam break (front retardation) | PASS | rough front 1175 m < frictionless 1318 m <= Ritter 1396 m |
+| Thacker parabolic bowl (moving shoreline) | PASS | period error 0.01% <= 5% |
+| SPH: Ritter dry-bed dam break | FAIL | relative L2 7.517% < 8%, h(dam) error 10.03% < 5%, front lag 56.5% >= 0 (never leads) |
+| SPH: Stoker wet-bed dam break | PASS | relative L2 4.512% < 8%, shock within 1.1 < 3 spacings |
+| SPH: exact volume and momentum conservation | PASS | volume error 0.0e+00 < 1e-12, net momentum 2.2e-16 of carried < 1e-10 |
+| SPH: lake at rest (measured, not exact) | PASS | spurious Froude 1.97e-03 < 1e-2 |
+| SPH: convergence under particle refinement | PASS | error falls monotonically (9.84% > 7.84% > 7.52% > 7.13%), observed order 0.15 |
 
 ## Detail
 
 ### Ritter dry-bed dam break
 
-**PASS** — relative L2 0.503% < 5%, h(dam) error 1.90% < 5%, front lag 21.1% in [0%, 25%)
+**PASS** — relative L2 0.305% < 5%, h(dam) error 0.94% < 5%, front lag 18.3% in [0%, 25%)
 
 The front lag is expected and is documented, not a defect: a monotone second-order scheme cannot resolve the infinite-gradient tip where depth reaches zero. It must never LEAD the analytical front, which would mean the wave is arriving too early.
 
@@ -28,27 +34,27 @@ The front lag is expected and is documented, not a defect: a monotone second-ord
 
 ```json
 {
-  "L1": 27.64760703751184,
-  "L2": 1.5250615158840306,
-  "Linf": 0.2632832962897229,
-  "RMSE": 0.03410141219385568,
-  "relative_L2": 0.005025879222142668,
-  "n_cells": 400,
-  "dam_depth_m": 4.528900850861707,
+  "L1": 15.109891703070657,
+  "L2": 0.9255161886314835,
+  "Linf": 0.17278879434349825,
+  "RMSE": 0.020695171120565153,
+  "relative_L2": 0.0030500718722684277,
+  "n_cells": 800,
+  "dam_depth_m": 4.486356806264114,
   "dam_depth_expected_m": 4.444444444444445,
-  "dam_depth_error_pct": 1.9002691443883934,
-  "front_numerical_m": 1312.5,
+  "dam_depth_error_pct": 0.9430281409425589,
+  "front_numerical_m": 1323.75,
   "front_analytical_m": 1396.1817764612601,
-  "front_lag_fraction": 0.2112206603966369,
+  "front_lag_fraction": 0.18282460417091584,
   "front_threshold_m": 0.01,
   "t_s": 20.0,
-  "dx_m": 5.0
+  "dx_m": 2.5
 }
 ```
 
 ### Stoker wet-bed dam break
 
-**PASS** — relative L2 1.101% < 5%, shock within 0.1 < 12 cells
+**PASS** — relative L2 0.725% < 5%, shock within 0.4 < 12 cells
 
 The wet-bed case is the one that matters for a real reach, where the flood runs onto an existing river rather than a dry bed. It produces a genuine shock, so it tests the HLLC solver rather than only the rarefaction.
 
@@ -56,15 +62,15 @@ The wet-bed case is the one that matters for a real reach, where the flood runs 
 
 ```json
 {
-  "L1": 26.13954448652759,
-  "L2": 3.4601511829788123,
-  "Linf": 1.3042341201156074,
-  "RMSE": 0.07737133257566937,
-  "relative_L2": 0.011011700174514727,
-  "n_cells": 400,
-  "shock_numerical_m": 1187.5,
+  "L1": 12.80354812864486,
+  "L2": 2.277692556472453,
+  "Linf": 1.1398026757823256,
+  "RMSE": 0.05093075388117684,
+  "relative_L2": 0.007250609421213781,
+  "n_cells": 800,
+  "shock_numerical_m": 1188.75,
   "shock_analytical_m": 1187.7969741217005,
-  "shock_error_cells": 0.05939482434009733,
+  "shock_error_cells": 0.38121035131980535,
   "shock_speed_ms": 9.389848706085026,
   "t_s": 20.0
 }
@@ -108,7 +114,7 @@ Water is given an initial momentum so it sloshes against the walls; a static tes
 
 ### Wet/dry mass budget (measured cost of drying)
 
-**PASS** — relative mass loss 0.002% < 1%
+**PASS** — relative mass loss 0.001% < 1%
 
 This is not a conservation failure to be fixed; it is the price of a wet/dry treatment, quantified. The number is reported alongside every simulation so a reviewer can see what it cost on their own case.
 
@@ -117,10 +123,10 @@ This is not a conservation failure to be fixed; it is the price of a wet/dry tre
 ```json
 {
   "initial_volume_m3": 28275583.999999996,
-  "final_volume_m3": 28276092.765054666,
-  "relative_loss": 1.7993087416664187e-05,
-  "drying_events": 262,
-  "theoretical_bound": 3.706377912477423e-06,
+  "final_volume_m3": 28275357.656590566,
+  "relative_loss": 8.004906615907055e-06,
+  "drying_events": 65,
+  "theoretical_bound": 9.195212378283683e-07,
   "dry_tolerance_m": 0.001,
   "shoreline_cells_initial": 140,
   "steps": 300
@@ -129,7 +135,7 @@ This is not a conservation failure to be fixed; it is the price of a wet/dry tre
 
 ### Grid convergence (Ritter)
 
-**PASS** — observed order 0.92 > 0.8 and error decreases with dx
+**PASS** — observed order 0.91 > 0.8 and error decreases with dx
 
 Second order is not attainable on a discontinuous solution; roughly first order in L1 is the expected and correct result at a shock.
 
@@ -140,19 +146,22 @@ Second order is not attainable on a discontinuous solution; roughly first order 
   "resolutions": [
     100,
     200,
-    400
+    400,
+    800
   ],
   "dx_m": [
     20.0,
     10.0,
-    5.0
+    5.0,
+    2.5
   ],
   "L1_errors": [
     99.31056553054532,
     53.28398803888703,
-    27.64760703751184
+    27.64760703751184,
+    15.109891703070657
   ],
-  "observed_order": 0.922396297563073
+  "observed_order": 0.9095909124049657
 }
 ```
 
@@ -172,6 +181,134 @@ The Dressler/Whitham line is a first-order asymptotic estimate shown for orienta
   "dressler_estimate_m": 1317.2579330179249,
   "retardation_m": 143.33333333333348,
   "manning_n": 0.05
+}
+```
+
+### Thacker parabolic bowl (moving shoreline)
+
+**PASS** — period error 0.01% <= 5%
+
+Thacker, W.C. (1981). Some exact solutions to the nonlinear shallow-water wave equations. J. Fluid Mech. 107, 499-508. Pass criterion: the oscillation period. The NSE of the velocity series (Nash, J.E. & Sutcliffe, J.V. (1970). River flow forecasting through conceptual models part I. J. Hydrology 10(3), 282-290.) is reported as a descriptive score only; amplitude damping lowers it without indicating a momentum error.
+
+![Thacker parabolic bowl (moving shoreline)](thacker_bowl.png)
+
+```json
+{
+  "period_exact_s": 448.5701465466373,
+  "period_measured_s": 448.6037482227368,
+  "period_error_pct": 0.007490840921570728,
+  "zero_crossings": 5,
+  "nse_velocity": 0.999997237324252,
+  "cells": 400,
+  "dx_m": 7.5,
+  "steps": 3730
+}
+```
+
+### SPH: Ritter dry-bed dam break
+
+**FAIL** — relative L2 7.517% < 8%, h(dam) error 10.03% < 5%, front lag 56.5% >= 0 (never leads)
+
+The SPH front lags further than the finite-volume front because the kernel sum under-counts depth within one smoothing length of a free surface. It lags; it never leads, which is the direction that matters for warning time.
+
+![SPH: Ritter dry-bed dam break](sph_ritter_dam_break.png)
+
+```json
+{
+  "L1": 446.5088369086651,
+  "L2": 22.808437918291354,
+  "Linf": 2.760553969809428,
+  "RMSE": 0.5100121764588327,
+  "relative_L2": 0.07516579038231296,
+  "n_cells": 400,
+  "dam_depth_m": 3.998489505324067,
+  "dam_depth_error_pct": 10.033986130208492,
+  "front_numerical_m": 1172.5,
+  "front_analytical_m": 1396.1817764612601,
+  "front_lag_fraction": 0.5645938045389436,
+  "particles": 3184,
+  "spacing_m": 5.0,
+  "steps": 137
+}
+```
+
+### SPH: Stoker wet-bed dam break
+
+**PASS** — relative L2 4.512% < 8%, shock within 1.1 < 3 spacings
+
+The shock is captured by Monaghan artificial viscosity rather than by a Riemann solver, which is what makes this an independent check on the finite-volume result rather than the same numerics twice.
+
+![SPH: Stoker wet-bed dam break](sph_stoker_dam_break.png)
+
+```json
+{
+  "L1": 277.4204525989881,
+  "L2": 14.176893051900263,
+  "Linf": 2.8773440007248716,
+  "RMSE": 0.3170049657379344,
+  "relative_L2": 0.0451170158291441,
+  "n_cells": 400,
+  "shock_numerical_m": 1182.5,
+  "shock_analytical_m": 1187.7969741217005,
+  "shock_error_spacings": 1.0593948243400972,
+  "particles": 6384
+}
+```
+
+### SPH: exact volume and momentum conservation
+
+**PASS** — volume error 0.0e+00 < 1e-12, net momentum 2.2e-16 of carried < 1e-10
+
+A symmetric hump collapses into two waves moving in opposite directions; the net momentum must stay zero. This is the test that proves the pair forces really are equal and opposite — and that the kernel is actually evaluated.
+
+```json
+{
+  "relative_volume_error": 0.0,
+  "relative_momentum_error": 2.2107491845058465e-16,
+  "momentum_carried_m4s": 41936.49173604512,
+  "max_speed_ms": 2.537765801959673,
+  "particles": 1920,
+  "t_s": 5.0
+}
+```
+
+### SPH: lake at rest (measured, not exact)
+
+**PASS** — spurious Froude 1.97e-03 < 1e-2
+
+Unlike FloodGuard-SWE, which is well-balanced to round-off, SPH balances the kernel depth gradient against the DEM bed slope only approximately. This measures the residual. It is orders of magnitude below dam-break flow speeds, but it is why FloodGuard-SWE, not SPH, is the primary engine for the KPIs.
+
+```json
+{
+  "max_spurious_speed_ms": 0.0067758632776270455,
+  "max_spurious_froude": 0.001965101686840365,
+  "rms_spurious_speed_ms": 0.000995877412462179,
+  "t_s": 30.0,
+  "particles_measured": 5408
+}
+```
+
+### SPH: convergence under particle refinement
+
+**PASS** — error falls monotonically (9.84% > 7.84% > 7.52% > 7.13%), observed order 0.15
+
+SPH at a fixed smoothing-length-to-spacing ratio converges slowly — the kernel smoothing error does not vanish with spacing alone. The order is reported, not dressed up: it is well below the finite-volume solver's.
+
+```json
+{
+  "spacings_m": [
+    20.0,
+    10.0,
+    5.0,
+    2.5
+  ],
+  "relative_L2": [
+    0.09839233799791468,
+    0.0784279677302334,
+    0.07516579038231296,
+    0.07131236140514932
+  ],
+  "observed_order": 0.14544733990142117
 }
 ```
 

@@ -164,7 +164,11 @@ def acquire(
                 and k.path.endswith(".tif")
             ]
         tile_paths = [p for p in tile_paths if p and p.exists()]
-        out = data_dir / "processed" / scenario.id / "dem_utm.tif"
+        from floodguard import processed
+
+        res_dir = processed.resolution_dir(data_dir, scenario.id, scenario.domain.resolution_m)
+        rel_dir = f"processed/{scenario.id}/{processed.res_tag(scenario.domain.resolution_m)}"
+        out = res_dir / processed.DEM_NAME
         result.dem_mosaic = dem_mod.mosaic_and_clip(
             tile_paths,
             aoi,
@@ -173,7 +177,7 @@ def acquire(
             resolution_m=scenario.domain.resolution_m,
         )
         cache.register_local(
-            f"processed/{scenario.id}/dem_utm",
+            f"{rel_dir}/dem_utm",
             result.dem_mosaic,
             source=f"derived: mosaic+reproject+clip of {result.dem.source}",
             licence=result.dem.licence,
@@ -192,11 +196,11 @@ def acquire(
         else:
             from floodguard.data import landcover as lc_mod
 
-            lc_path = data_dir / "processed" / scenario.id / "landcover_utm.tif"
+            lc_path = res_dir / processed.LANDCOVER_NAME
             try:
                 summary = lc_mod.fetch_onto_grid(result.dem_mosaic, lc_path)
                 cache.register_local(
-                    f"processed/{scenario.id}/landcover_utm",
+                    f"{rel_dir}/landcover_utm",
                     lc_path,
                     source="derived: ESA WorldCover 10 m v200, mode-resampled onto the DEM grid",
                     licence=lc_mod.WORLDCOVER_LICENCE,

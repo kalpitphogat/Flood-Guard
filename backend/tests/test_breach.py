@@ -242,3 +242,41 @@ def test_historical_validation_runs_and_scores_every_model():
         }
         for s in r.scores.values():
             assert np.isfinite(s["width_error_pct"])
+
+
+def test_routing_never_releases_more_than_the_reservoir_holds():
+    """Regression: a curve that stops above the breach invert created water.
+
+    A surface model that saw the lake surface gives a curve whose lowest level
+    is far above the breach invert. Once storage hit zero the level stayed
+    pinned at that lowest sample and the weir kept discharging: Tehri at 120 m
+    released 31,478 MCM from a 3,540 MCM reservoir.
+    """
+    levels = np.linspace(60.0, 100.0, 40)  # curve bottom 60 m above the invert at 0 m
+    areas = np.full_like(levels, 1.0e6)
+    volumes = (levels - 60.0) * 1.0e6  # 40 MCM in total
+    curve = ElevationAreaCapacity(levels, areas, volumes, 900.0, 0.0)
+    geom = bp.BreachGeometry(
+        "test", width_m=300.0, depth_m=100.0, side_slope=1.0,
+        formation_time_min=20.0, reference="test",
+    )
+    h = routing.route(
+        curve, geom, initial_level_m=100.0, crest_elevation_m=100.0,
+        scenario_type=ScenarioType.COMPLETE_DAM_BREAK, duration_s=6 * 3600.0,
+    )
+    assert h.total_volume_m3 <= 40.0e6 * (1 + 1e-6)
+    assert h.mass_error < 1e-3
+    assert any("storage was exhausted" in w for w in h.warnings)
+
+
+def test_exhausted_reservoir_is_not_reported_as_still_draining():
+    levels = np.linspace(60.0, 100.0, 40)
+    areas = np.full_like(levels, 1.0e6)
+    curve = ElevationAreaCapacity(levels, areas, (levels - 60.0) * 1.0e6, 900.0, 0.0)
+    geom = bp.BreachGeometry("t", 300.0, 100.0, 1.0, 20.0, "t")
+    h = routing.route(
+        curve, geom, initial_level_m=100.0, crest_elevation_m=100.0,
+        scenario_type=ScenarioType.COMPLETE_DAM_BREAK, duration_s=6 * 3600.0,
+    )
+    assert not any("has not finished draining" in w for w in h.warnings)
+    assert h.q_at(h.time_s[-1] + 60.0) == 0.0  # nothing is released after the end

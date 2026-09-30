@@ -319,6 +319,11 @@ def write_kml(
     band_of = {label: i for i, (_lo, _hi, label, _c) in enumerate(DEPTH_BANDS, start=1)}
 
     def placemark(row, geom) -> list[str]:
+        # GeoDataFrame rows carry unknown values as NaN, not None; treat them as
+        # unknown so they are neither printed as "nan" nor given a time span.
+        row = {
+            k: (None if isinstance(v, float) and np.isnan(v) else v) for k, v in row.items()
+        }
         style = band_of.get(row.get("depth_band_label", ""), 1)
         arrival = row.get("arrival_time_min")
         desc = "<br/>".join(
@@ -419,3 +424,81 @@ def write_timeseries_csv(
                 [f"{t:.1f}", f"{t / 3600:.4f}", *(f"{v[i]:.4f}" for v in series.values())]
             )
     return ExportResult("csv", path, path.stat().st_size, len(times_s))
+
+
+def write_wave_animation_kmz(
+    frames: list[tuple[float, np.ndarray]],
+    transform,
+    crs: str,
+    path: Path,
+    *,
+    name: str,
+    wet_threshold_m: float = 0.3,
+    simplify_m: float = 0.0,
+    event_start: datetime | None = None,
+) -> ExportResult | None:
+    """KMZ of the INSTANTANEOUS wet extent at every stored frame.
+
+    Unlike `write_kml`, which groups the maximum extent by arrival time (so it
+    only ever grows), each frame here is the area wet at that moment, shown from
+    its own time until the next frame's: Google Earth's slider then shows the
+    wave advancing and receding. A frame lasts until the next one; a fixed short
+    span would make the wave vanish between frames minutes apart.
+
+    Returns None when no frame has any wet cell.
+    """
+    from xml.sax.saxutils import escape
+
+    import geopandas as gpd
+    from rasterio.features import shapes
+    from shapely.geometry import shape
+    from shapely.ops import unary_union
+
+    start = event_start or datetime(2024, 1, 1, tzinfo=timezone.utc)
+
+    def stamp(t_s: float) -> str:
+        return (start + timedelta(seconds=float(t_s))).isoformat().replace("+00:00", "Z")
+
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<kml xmlns="http://www.opengis.net/kml/2.2">',
+        "<Document>",
+        f"<name>{escape(name)}</name>",
+        "<description>Instantaneous flooded extent (depth at or above "
+        f"{wet_threshold_m:g} m) at each stored solver frame. Times are measured from "
+        f"the start of the breach; the calendar date {start.date().isoformat()} is a "
+        "nominal anchor for Google Earth's time slider, not a forecast date.</description>",
+        '<Style id="wet"><LineStyle><color>ccb45a1e</color><width>1</width></LineStyle>'
+        "<PolyStyle><color>88e0a040</color></PolyStyle></Style>",
+    ]
+    written = 0
+    times = [t for t, _ in frames]
+    for i, (t_s, depth) in enumerate(frames):
+        wet = (np.nan_to_num(depth, nan=0.0) >= wet_threshold_m).astype(np.uint8)
+        if not wet.any():
+            continue
+        polys = [shape(g) for g, v in shapes(wet, mask=wet > 0, transform=transform) if v == 1]
+        geom = unary_union(polys)
+        if simplify_m > 0:
+            geom = geom.simplify(simplify_m, preserve_topology=True)
+        geom = gpd.GeoSeries([geom], crs=crs).to_crs("EPSG:4326").iloc[0]
+        if i + 1 < len(times):
+            end_s = times[i + 1]
+        else:
+            end_s = t_s + (t_s - times[i - 1] if i > 0 else 60.0)
+        lines += [
+            "<Placemark>",
+            f"<name>t = {t_s / 60:.0f} min</name>",
+            "<styleUrl>#wet</styleUrl>",
+            f"<TimeSpan><begin>{stamp(t_s)}</begin><end>{stamp(end_s)}</end></TimeSpan>",
+            _geometry_to_kml(geom),
+            "</Placemark>",
+        ]
+        written += 1
+    if written == 0:
+        return None
+    lines += ["</Document>", "</kml>"]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("doc.kml", "\n".join(lines))
+    return ExportResult("kmz", path, path.stat().st_size, written)

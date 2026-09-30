@@ -107,6 +107,8 @@ class BreachInput(BaseModel):
     growth: Literal["linear", "sine", "parabolic"] = "linear"
     width_m: float | None = Field(default=None, gt=0)
     depth_m: float | None = Field(default=None, gt=0)
+    #: Partial breach only: breach depth / structural height. A user assumption.
+    depth_fraction: float | None = Field(default=None, gt=0, le=1)
     side_slope: float = Field(default=1.0, ge=0)
     formation_time_min: float | None = Field(default=None, gt=0)
     parameter_model: str = "froehlich_2008"
@@ -157,6 +159,20 @@ class SimulationRequest(BaseModel):
             "the breach model's hydrograph. Recorded as user-supplied in every output."
         ),
     )
+    preset_key: str | None = Field(
+        default=None,
+        description=(
+            "A precomputed preset (see GET /api/presets). When set, no solver runs: the "
+            "stored run is returned as-is, labelled with the date it was computed."
+        ),
+    )
+    quick: bool = Field(
+        default=False,
+        description=(
+            "Run live as a quick estimate: resolution, duration and engines are forced "
+            "to the quick settings and the result is labelled as a quick estimate."
+        ),
+    )
 
 
 class BreachPrediction(BaseModel):
@@ -183,6 +199,67 @@ class JobCreated(BaseModel):
     status: str
     scenario_id: str
     websocket: str = Field(description="WebSocket path for live progress.")
+    run_id: str | None = Field(
+        default=None,
+        description=(
+            "The run to load. Set immediately for a precomputed preset; for queued jobs "
+            "it equals job_id once the job succeeds."
+        ),
+    )
+    mode: Literal["precomputed", "quick_estimate", "full"] = "full"
+    mode_label: str | None = None
+    completed_utc: str | None = None
+
+
+class PresetLevel(BaseModel):
+    level: str
+    label: str
+    level_m: float
+
+
+class PresetDam(BaseModel):
+    scenario_id: str
+    name: str
+    duration_hours: float
+    levels: list[PresetLevel]
+
+
+class PresetEntry(BaseModel):
+    key: str
+    scenario_id: str
+    scenario_type: str
+    type_label: str
+    level: str
+    level_label: str
+    level_m: float
+    modelled: bool = Field(
+        description="False when FloodGuard cannot yet model this failure type distinctly."
+    )
+    available: bool = Field(description="True only when the stored run exists on disk.")
+    reason: str | None = Field(
+        default=None, description="Why an entry is unavailable, in plain words."
+    )
+    run_id: str
+    completed_utc: str | None = None
+    wall_seconds: float | None = None
+    resolution_m: float = 120.0
+
+
+class QuickSettings(BaseModel):
+    resolution_m: float
+    duration_hours: float
+    engines: list[str]
+    label: str
+
+
+class PresetCatalog(BaseModel):
+    resolution_m: float = Field(description="The default preset resolution.")
+    resolutions: list[float] = Field(default_factory=list)
+    engines: list[str]
+    dams: list[PresetDam]
+    failure_types: dict[str, str]
+    presets: list[PresetEntry]
+    quick: QuickSettings
 
 
 class JobState(BaseModel):
@@ -235,6 +312,16 @@ class ResultSummary(BaseModel):
     resolution_m: float | None
     warnings: list[str] = Field(default_factory=list)
     provenance: dict[str, Any] = Field(default_factory=dict)
+    run_mode: Literal["precomputed", "quick_estimate", "full"] = Field(
+        default="full",
+        description=(
+            "How this run was produced. Runs made before run_mode existed were full "
+            "runs from the CLI or the API, so they report 'full'."
+        ),
+    )
+    run_meta: dict[str, Any] = Field(default_factory=dict)
+    completed_utc: str | None = None
+    duration_hours: float | None = None
 
 
 class ComparisonRow(BaseModel):

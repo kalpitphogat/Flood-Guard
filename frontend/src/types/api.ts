@@ -77,6 +77,8 @@ export interface BreachInput {
   growth?: 'linear' | 'sine' | 'parabolic'
   width_m?: number | null
   depth_m?: number | null
+  /** Partial breach: breach depth / structural height (a user assumption). */
+  depth_fraction?: number | null
   side_slope?: number
   formation_time_min?: number | null
   parameter_model?: string
@@ -104,6 +106,131 @@ export interface SimulationRequest {
   manning_n_overrides?: Record<string, number>
   dem_upload_id?: string | null
   hydrograph_upload_id?: string | null
+  /** A precomputed preset: the stored run is returned, no solver runs. */
+  preset_key?: string | null
+  /** Live quick estimate: resolution, duration and engines forced server-side. */
+  quick?: boolean
+}
+
+export type RunMode = 'precomputed' | 'quick_estimate' | 'full'
+
+export interface SensitivityEnd {
+  value: number
+  peak_m3s: number
+  time_to_peak_min: number
+  volume_mcm: number
+}
+
+export interface Sensitivity {
+  run_id: string
+  method: string
+  base: { width_m: number; formation_time_min: number; level_m: number; peak_m3s: number }
+  factors: Array<{ factor: string; basis: string; base_value: number; low: SensitivityEnd; high: SensitivityEnd; swing_m3s: number }>
+  notes: string[]
+}
+
+export interface SiteRow {
+  scenario_id: string
+  name: string
+  dam: string
+  river: string
+  tier: string
+  tier_reason: string
+  towns: number
+  population_raster: boolean
+  osm_layers: string[]
+  resolutions: Record<string, {
+    terrain: { ok: boolean; reason: string }
+    presets_defined: number
+    presets_stored: number
+  }>
+}
+
+export interface ProvenanceRow {
+  label: string
+  value: string | number | boolean
+  source: string
+}
+
+export interface RunProvenance {
+  run_id: string
+  labels: Array<{ level: 'info' | 'caution'; text: string; source: string }>
+  sections: Array<{ title: string; rows: ProvenanceRow[] }>
+}
+
+export interface GaugePoint {
+  kind: 'town' | 'channel'
+  in_domain: boolean
+  max_depth_m: number | null
+  max_velocity_ms?: number | null
+  arrival_min?: number | null
+  peak_frame_min?: number | null
+  end_depth_m?: number | null
+  rising_at_end?: boolean
+  hazard_label?: string | null
+  near_domain_edge?: boolean
+  series_m: number[] | null
+  shared_with?: string[]
+  note?: string
+}
+
+export interface TownGauge {
+  name: string
+  population: number | null
+  town: GaugePoint
+  channel: GaugePoint | null
+  chainage_km: number | null
+  town_to_channel_km: number | null
+}
+
+export interface GaugesResponse {
+  run_id: string
+  times_min: number[]
+  frame_interval_min: number | null
+  gauges: TownGauge[]
+  notes: string[]
+}
+
+export interface DatasetSource {
+  source: string
+  licences: string[]
+  files: number
+  total_bytes: number
+  example_url: string | null
+  last_fetched_utc: string | null
+}
+
+export interface DatasetCatalog {
+  sources: DatasetSource[]
+  entry_count?: number
+  updated_utc?: string
+  note: string
+}
+
+export interface LifeLossCategory {
+  severity: string
+  warning: string
+  understanding: string
+  population_at_risk: number
+  fatality_rate: number
+  rate_range: [number, number]
+  estimate: number
+}
+
+/** Graham (1999) loss-of-life estimate; `computed: false` carries the reason. */
+export interface LifeLoss {
+  method: string
+  citation: string
+  computed: boolean
+  reason?: string
+  population_at_risk?: number | null
+  estimate?: number | null
+  range: [number | null, number | null]
+  assumptions?: Record<string, unknown>
+  by_category?: LifeLossCategory[]
+  par_without_a_rate?: number | null
+  notes?: string[]
+  caveats: string[]
 }
 
 export interface BreachPrediction {
@@ -133,6 +260,57 @@ export interface JobCreated {
   status: string
   scenario_id: string
   websocket: string
+  run_id: string | null
+  mode: RunMode
+  mode_label: string | null
+  completed_utc: string | null
+}
+
+export interface PresetLevel {
+  level: string
+  label: string
+  level_m: number
+}
+
+export interface PresetDam {
+  scenario_id: string
+  name: string
+  duration_hours: number
+  levels: PresetLevel[]
+}
+
+export interface PresetEntry {
+  key: string
+  scenario_id: string
+  scenario_type: string
+  type_label: string
+  level: string
+  level_label: string
+  level_m: number
+  modelled: boolean
+  available: boolean
+  reason: string | null
+  run_id: string
+  completed_utc: string | null
+  wall_seconds: number | null
+  resolution_m: number
+}
+
+export interface QuickSettings {
+  resolution_m: number
+  duration_hours: number
+  engines: string[]
+  label: string
+}
+
+export interface PresetCatalog {
+  resolution_m: number
+  resolutions: number[]
+  engines: string[]
+  dams: PresetDam[]
+  failure_types: Record<string, string>
+  presets: PresetEntry[]
+  quick: QuickSettings
 }
 
 export type JobStatus =
@@ -214,6 +392,10 @@ export interface ResultSummary {
   resolution_m: number | null
   warnings: string[]
   provenance: Record<string, unknown>
+  run_mode: RunMode
+  run_meta: Record<string, unknown>
+  completed_utc: string | null
+  duration_hours: number | null
 }
 
 export interface ComparisonRow {
@@ -308,6 +490,8 @@ export interface RunListing {
   max_depth_m: number | null
   has_frames: boolean
   has_impact: boolean
+  run_mode: RunMode
+  library_key: string | null
 }
 
 export interface FramesResponse {

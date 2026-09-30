@@ -80,6 +80,8 @@ def list_runs(limit: int = 50) -> list[dict[str, Any]]:
                 "max_depth_m": summary.get("max_depth_m"),
                 "has_frames": any(path.parent.glob("frames_*.npz")),
                 "has_impact": (path.parent / "impact.json").exists(),
+                "run_mode": data.get("run_mode") or "full",
+                "library_key": (data.get("run_meta") or {}).get("library_key"),
                 "_mtime": path.stat().st_mtime,
             }
         )

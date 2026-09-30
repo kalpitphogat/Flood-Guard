@@ -58,6 +58,10 @@ class PreprocessResult:
     manning: np.ndarray = field(repr=False, default=None)
 
     reservoir: reservoir.ReservoirGeometry | None = None
+    #: A natural blockage raised into `dem` (None for engineered dams).
+    barrier: Any = None
+    #: Where the solver releases the breach outflow; None -> dam_snapped_rc.
+    release_rc: tuple[int, int] | None = None
     cross_sections: list[sections.CrossSection] = field(default_factory=list)
     catchment_km2: float = 0.0
     conditioning_stats: dict[str, Any] = field(default_factory=dict)
@@ -126,6 +130,7 @@ class PreprocessResult:
             "conditioning": self.conditioning_stats,
             "roughness": self.roughness_stats,
             "reservoir": self.reservoir.to_dict() if self.reservoir else None,
+            "barrier": self.barrier.to_dict() if self.barrier else None,
             "cross_sections": [s.to_dict() for s in self.cross_sections],
             "warnings": self.warnings,
             "runtime_s": self.runtime_s,
@@ -167,8 +172,12 @@ def run_preprocess(
     from pyproj import Transformer
     from rasterio.transform import rowcol
 
+    from floodguard import processed
+
     started = time.perf_counter()
-    out_dir = data_dir / "processed" / scenario.id
+    # Resolution-scoped (data/processed/<id>/r<res>/), falling back to the
+    # legacy flat folder when its DEM is at this resolution.
+    out_dir = processed.inputs_dir(data_dir, scenario.id, scenario.domain.resolution_m)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     dem_path = dem_path or (out_dir / "dem_utm.tif")
@@ -243,8 +252,13 @@ def run_preprocess(
     if snap_distance_m > 250:
         warnings.append(
             f"The dam point moved {snap_distance_m:.0f} m when snapped to the stream network "
-            f"(search radius {search_m:.0f} m, scaled to the {scenario.dam.crest_length_m or 0:.0f} m "
-            f"crest length). NRLD coordinates are ~30 m precision, so a move this large "
+            f"(search radius {search_m:.0f} m, "
+            + (
+                f"scaled to the {scenario.dam.crest_length_m:.0f} m crest length"
+                if scenario.dam.crest_length_m
+                else "the default; no crest length is given"
+            )
+            + "). NRLD coordinates are ~30 m precision, so a move this large "
             f"suggests the published point is on an abutment rather than the spillway."
         )
 
@@ -289,6 +303,20 @@ def run_preprocess(
     catchment_km2 = float(catchment.sum() * cell_size_m**2 / 1e6)
     log.info("dam catchment within the AOI: %.1f km2", catchment_km2)
 
+    # The curve is always built up to FRL, whatever the starting level. Two
+    # reasons, both hit on the Tehri 120 m presets: (1) a surface model sees
+    # the lake as a flat floor at its acquisition-time level, so a pool
+    # delineated at MDDL finds no water at all (0.01 km2, "empty" reservoir);
+    # (2) `area_at_frl_km2` is by definition the area AT FRL, so the
+    # reconstruction must be calibrated there. Routing then starts from the
+    # initial level on this curve. A starting level above FRL (towards the
+    # crest) extends the curve to that level instead.
+    frl = scenario.dam.frl_m
+    curve_top_m = (
+        max(frl, scenario.initial_level_m) if frl is not None else scenario.initial_level_m
+    )
+    at_frl = frl is not None and curve_top_m == frl
+
     reservoir_geom = None
     try:
         reservoir_geom = reservoir.build(
@@ -297,7 +325,7 @@ def run_preprocess(
             snap_row,
             snap_col,
             cell_size_m**2,
-            scenario.initial_level_m,
+            curve_top_m,
             scenario.dam.gross_storage_mcm,
             catchment_mask=catchment,
             # A reservoir bed cannot lie below the dam's own foundation.
@@ -308,7 +336,7 @@ def run_preprocess(
             ),
             published_area_m2=(
                 scenario.reservoir.area_at_frl_km2 * 1e6
-                if scenario.reservoir.area_at_frl_km2
+                if scenario.reservoir.area_at_frl_km2 and (at_frl or frl is None)
                 else None
             ),
             area_source=scenario.reservoir.area_source,
@@ -317,6 +345,50 @@ def run_preprocess(
     except Exception as exc:  # noqa: BLE001
         warnings.append(f"Reservoir geometry could not be derived: {type(exc).__name__}: {exc}")
         log.exception("reservoir derivation failed")
+
+    # --- 4b. natural blockage: raise the barrier into the solver's terrain ---
+    # After the lake curve (built on the pre-event DEM, so its storage is above
+    # the pre-event water surface) and before anything the solver reads.
+    barrier = None
+    release_rc = None
+    from floodguard.scenario import DamType
+
+    if (
+        scenario.dam.dam_type == DamType.NATURAL_BLOCKAGE
+        and scenario.blockage.burn_into_dem
+    ):
+        from floodguard.preprocess import blockage
+
+        crest_m = scenario.dam.crest_elevation_m
+        if crest_m is None:
+            raise ValueError(
+                "a natural blockage needs dam.crest_elevation_m to be burned into the DEM "
+                "(or set blockage.burn_into_dem: false)"
+            )
+        dem, barrier = blockage.burn_barrier(
+            dem, nodata_mask, path_rc, cell_size_m, crest_m,
+            base_length_m=scenario.blockage.base_length_m,
+        )
+        release_rc = barrier.release_rc
+        warnings.append(
+            f"The natural barrier was BURNED INTO THE DEM: crest {crest_m:g} m, "
+            f"{barrier.crest_length_m:,.0f} m across the valley (measured from the terrain), "
+            f"{barrier.thickness_m:,.0f} m thick ({barrier.thickness_source}). Lake storage is "
+            f"measured above the pre-event water surface "
+            f"({barrier.pre_event_water_surface_m:,.1f} m at the barrier point)."
+        )
+        if not barrier.confined:
+            warnings.append(
+                f"The burned barrier did not meet ground above its {crest_m:g} m crest within "
+                f"{blockage.MAX_HALF_WIDTH_M / 1000:.0f} km on at least one side (or ran into the "
+                f"DEM edge / a void). Water can pass around its end, so this crest height is "
+                f"not physically consistent with the valley here."
+            )
+    elif scenario.dam.dam_type == DamType.NATURAL_BLOCKAGE:
+        warnings.append(
+            "blockage.burn_into_dem is off: the barrier is NOT in the solver's DEM, so breach "
+            "outflow can spread upstream into the valley the lake occupies."
+        )
 
     # A catchment that runs to the AOI edge means the pool may be truncated.
     edge_touch = (
@@ -397,6 +469,8 @@ def run_preprocess(
         corridor=corridor,
         manning=rough.n,
         reservoir=reservoir_geom,
+        barrier=barrier,
+        release_rc=release_rc,
         cross_sections=xsections,
         catchment_km2=catchment_km2,
         conditioning_stats=stats,
@@ -423,6 +497,21 @@ def run_preprocess(
                 0,
             )
         np.save(out_dir / "flow_path_rc.npy", path_rc)
+        if barrier is not None:
+            _write_raster(out_dir / "barrier_mask.tif", barrier.mask.astype(np.uint8),
+                          transform, crs, "uint8", 0)
+            import rasterio as _rio
+
+            burned_path = out_dir / "dem_barrier_utm.tif"
+            _write_raster(burned_path, dem, transform, crs, "float32", -9999.0)
+            with _rio.open(burned_path, "r+") as dst:
+                dst.update_tags(
+                    FG_BARRIER="burned into this DEM (FloodGuard preprocess/blockage.py)",
+                    FG_BARRIER_CREST_M=str(barrier.crest_m),
+                    FG_BARRIER_CREST_LENGTH_M=f"{barrier.crest_length_m:.0f}",
+                    FG_BARRIER_THICKNESS=barrier.thickness_source,
+                    FG_SOURCE_DEM="dem_utm.tif (pre-event, unchanged)",
+                )
 
         (out_dir / "preprocess.json").write_text(
             json.dumps(result.to_dict(), indent=2, default=str), encoding="utf-8"

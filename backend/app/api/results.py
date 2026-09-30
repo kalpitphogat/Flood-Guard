@@ -111,7 +111,26 @@ def summary(run_id: str) -> ResultSummary:
         resolution_m=data.get("resolution_m") or _resolution_from_raster(run_id),
         warnings=data.get("warnings", []),
         provenance=provenance,
+        **run_labels(data),
     )
+
+
+def run_labels(data: dict[str, Any]) -> dict[str, Any]:
+    """How a run was produced, for the result badge. Old runs were full runs."""
+    meta = dict(data.get("run_meta") or {})
+    mode = data.get("run_mode") or meta.get("run_mode") or "full"
+    duration = meta.get("duration_hours")
+    if duration is None and mode == "precomputed" and meta.get("library_key"):
+        from floodguard import library as lib
+
+        entry = lib.load_index(get_settings().floodguard_data_dir).get(meta["library_key"])
+        duration = (entry or {}).get("duration_hours")
+    return {
+        "run_mode": mode,
+        "run_meta": meta,
+        "completed_utc": data.get("completed_utc"),
+        "duration_hours": duration,
+    }
 
 
 def _resolution_from_raster(run_id: str) -> float | None:
@@ -242,8 +261,14 @@ def cross_section(
     data = load_result(run_id)
     scenario_id = data["scenario_id"]
 
-    pre_path = settings.processed_dir / scenario_id / "preprocess.json"
-    if not pre_path.exists():
+    from floodguard import processed
+
+    # Only sections computed at THIS run's resolution: a 60 m run must never be
+    # drawn with 120 m sections.
+    pre_path = processed.find_preprocess_json(
+        settings.floodguard_data_dir, scenario_id, data.get("resolution_m")
+    )
+    if pre_path is None or not pre_path.exists():
         raise HTTPException(status_code=404, detail="no preprocessing output for this scenario")
 
     pre = json.loads(pre_path.read_text(encoding="utf-8"))
@@ -330,6 +355,7 @@ EXPORT_FILES = {
     "shp": ("inundation_shp.zip", "application/zip"),
     "kml": ("inundation.kml", "application/vnd.google-earth.kml+xml"),
     "kmz": ("inundation.kmz", "application/vnd.google-earth.kmz"),
+    "wave_kmz": ("wave_animation.kmz", "application/vnd.google-earth.kmz"),
     "csv": ("breach_hydrograph.csv", "text/csv"),
     "pdf": ("report.pdf", "application/pdf"),
 }
@@ -348,13 +374,15 @@ def export(
         )
     filename, media_type = EXPORT_FILES[format]
     path = run_dir(run_id) / filename
-    if format == "pdf" and not path.exists():
+    if format == "pdf" and not _fresh(path, run_id, "life_loss_*.json"):
         # Generated on first request, from the same files as `floodguard report`.
         from floodguard.report import build_report, write_map_previews
 
         load_result(run_id)
         write_map_previews(run_dir(run_id))
         build_report(run_dir(run_id), path)
+    if format == "wave_kmz" and not _fresh(path, run_id):
+        _write_wave_kmz(run_id, path)
     if not path.exists():
         raise HTTPException(
             status_code=404,
@@ -364,6 +392,51 @@ def export(
             ),
         )
     return FileResponse(path, media_type=media_type, filename=f"{run_id}_{filename}")
+
+
+def life_loss_cache(path: Path, result: dict[str, Any]) -> dict[str, Any] | None:
+    """A cached Graham estimate, only if it was computed from THIS run."""
+    if not path.exists():
+        return None
+    try:
+        cached = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if cached.get("run_completed_utc") != result.get("completed_utc"):
+        return None
+    return cached
+
+
+def _fresh(path: Path, run_id: str, *also: str) -> bool:
+    """A derived file is usable only if newer than result.json (and any `also` globs)."""
+    folder = run_dir(run_id)
+    inputs = [folder / "result.json", *(p for g in also for p in folder.glob(g))]
+    newest = max((p.stat().st_mtime for p in inputs if p.exists()), default=0.0)
+    return path.exists() and path.stat().st_mtime >= newest
+
+
+def _write_wave_kmz(run_id: str, path: Path) -> None:
+    """Time-animated KMZ of the wet extent per frame, generated on first request."""
+    import rasterio
+
+    from floodguard.postprocess.exports import write_wave_animation_kmz
+
+    data = load_result(run_id)
+    folder = run_dir(run_id)
+    npz_files = sorted(folder.glob("frames_*.npz"))
+    if not npz_files or not (folder / "max_depth.tif").exists():
+        return
+    with rasterio.open(folder / "max_depth.tif") as src:
+        transform, crs = src.transform, src.crs.to_string()
+    with np.load(npz_files[0]) as npz:
+        times = [float(t) for t in npz["times_s"]]
+        frames = [(t, npz[f"f{i:04d}"]) for i, t in enumerate(times)]
+    res = data.get("resolution_m") or abs(transform.a)
+    write_wave_animation_kmz(
+        frames, transform, crs, path,
+        name=f"{data.get('scenario_id', run_id)} — flood wave animation ({run_id})",
+        simplify_m=float(res) / 2.0,
+    )
 
 
 # --- tiles ------------------------------------------------------------------------
@@ -621,3 +694,112 @@ def tile(
         media_type="image/png",
         headers={"Cache-Control": "public, max-age=3600"},
     )
+
+
+@router.get("/{run_id}/life-loss")
+def life_loss(
+    run_id: str,
+    warning_issued_min: float = Query(
+        0.0, ge=-240.0, le=1440.0,
+        description="When a warning is issued, minutes after the breach starts "
+                    "(negative = before). An assumption, shown with the result.",
+    ),
+    understanding: str = Query("vague", pattern="^(vague|precise)$"),
+) -> dict[str, Any]:
+    """Graham (1999) loss-of-life estimate for a finished run, with its caveats.
+
+    Computed from the run's own depth and arrival rasters and the population
+    raster on this machine, then cached beside the run per assumption set.
+    """
+    from floodguard.impact import life_loss as ll
+
+    data = load_result(run_id)
+    path = run_dir(run_id) / f"life_loss_w{warning_issued_min:g}_{understanding}.json"
+    cached = life_loss_cache(path, data)
+    if cached is not None:
+        return cached
+    raw = get_settings().raw_dir / "population" / "worldpop"
+    population = next(iter(sorted(raw.glob("*.tif"))), None) if raw.exists() else None
+    result = ll.estimate_for_run(
+        run_dir(run_id), population, warning_issued_min=warning_issued_min,
+        understanding=understanding,
+    )
+    result["run_id"] = run_id
+    result["scenario_id"] = data.get("scenario_id")
+    if result.get("computed"):
+        path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    return result
+
+
+@router.get("/{run_id}/gauges")
+def gauges(run_id: str) -> dict[str, Any]:
+    """Depth-time curves at each named town and at the river beside it.
+
+    Read from the run's stored frames; cached beside the run and reused only
+    while it belongs to the same run (content check on completed_utc).
+    """
+    from floodguard import processed
+    from floodguard.postprocess.gauges import compute_gauges
+
+    data = load_result(run_id)
+    folder = run_dir(run_id)
+    cache = folder / "gauges.json"
+    if cache.exists():
+        try:
+            cached = json.loads(cache.read_text(encoding="utf-8"))
+            if cached.get("run_completed_utc") == data.get("completed_utc"):
+                return cached
+        except (OSError, ValueError):
+            pass
+    pre = processed.find_preprocess_json(
+        get_settings().floodguard_data_dir, data["scenario_id"], data.get("resolution_m")
+    )
+    out = compute_gauges(folder, pre)
+    cache.write_text(json.dumps(out), encoding="utf-8")
+    return out
+
+
+@router.get("/{run_id}/provenance")
+def run_provenance(run_id: str) -> dict[str, Any]:
+    """Every number's origin, read from the run's own files, with honesty labels."""
+    from floodguard.postprocess.run_provenance import build_provenance
+
+    load_result(run_id)
+    return build_provenance(run_dir(run_id))
+
+
+@router.get("/{run_id}/sensitivity")
+def sensitivity(run_id: str) -> dict[str, Any]:
+    """One-at-a-time sensitivity of the breach outflow for this run (tornado data)."""
+    import numpy as np
+
+    from floodguard import processed
+    from floodguard.breach.sensitivity import oat_sensitivity
+    from floodguard.preprocess.reservoir import ElevationAreaCapacity
+    from floodguard.scenario import Scenario
+
+    data = load_result(run_id)
+    settings = get_settings()
+    path = settings.scenarios_dir / f"{data['scenario_id']}.yaml"
+    pre_path = processed.find_preprocess_json(
+        settings.floodguard_data_dir, data["scenario_id"], data.get("resolution_m")
+    )
+    if not path.exists() or pre_path is None:
+        raise HTTPException(
+            status_code=404,
+            detail="sensitivity needs the scenario file and this resolution's preprocess.json "
+                   "(run `floodguard preprocess --resolution <m>`)",
+        )
+    raw = Scenario.from_yaml(path).model_dump(mode="json")
+    prov = (data.get("hydrograph") or {}).get("provenance") or {}
+    if prov.get("initial_level_m") is not None:
+        raw["reservoir"]["initial_level_m"] = prov["initial_level_m"]
+    raw["scenario_type"] = prov.get("scenario_type", raw["scenario_type"])
+    scenario = Scenario.model_validate(raw)
+    cd = json.loads(pre_path.read_text(encoding="utf-8"))["reservoir"]["curve"]
+    curve = ElevationAreaCapacity(
+        levels_m=np.array(cd["levels_m"]), areas_m2=np.array(cd["areas_km2"]) * 1e6,
+        volumes_m3=np.array(cd["volumes_mcm"]) * 1e6, cell_area_m2=cd["cell_area_m2"],
+        dam_elevation_m=cd["dam_elevation_m"], method=cd["method"],
+    )
+    return {"run_id": run_id, **oat_sensitivity(scenario, curve)}

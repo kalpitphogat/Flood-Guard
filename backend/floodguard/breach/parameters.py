@@ -245,7 +245,19 @@ def predict_all(
         macdonald_langridge_monopolis_1984(height_m, storage_m3, scenario_type),
     ]
 
-    if not is_embankment:
+    if dam_type == DamType.NATURAL_BLOCKAGE:
+        note = (
+            "This is a NATURAL blockage (landslide / debris dam). All three breach-parameter "
+            "models are regressions on CONSTRUCTED embankments. Landslide dams are much wider "
+            "and more heterogeneous, and their flood peaks are smaller for the same height "
+            "and volume (Costa 1985, USGS OFR 85-560, p.36). These predictions do not apply: "
+            "breach.width_m and breach.formation_time_min must be supplied, and the routed "
+            "peak is cross-checked against Costa's landslide-dam regression."
+        )
+        for r in results:
+            r.applicable = False
+            r.caveats.insert(0, note)
+    elif not is_embankment:
         note = (
             f"This dam is classified {dam_type.value}. All three breach-parameter models "
             f"are regressions on EMBANKMENT failures, where the breach grows by "
@@ -307,6 +319,22 @@ def resolve(
     UI can show them as ghost hints and so the report can state how far the
     user's input sits from the empirical range.
     """
+    from floodguard.scenario import ScenarioType
+
+    natural = scenario.dam.dam_type == DamType.NATURAL_BLOCKAGE
+    if scenario.scenario_type == ScenarioType.LANDSLIDE_DAM_BREACH and not natural:
+        raise ValueError(
+            "scenario_type landslide_dam_breach describes a NATURAL blockage failing, but "
+            f"this dam is {scenario.dam.dam_type.value}. Use a scenario whose dam has "
+            "dam_type: natural_blockage, or pick a constructed-dam failure type."
+        )
+    if natural and not (scenario.breach.width_m and scenario.breach.formation_time_min):
+        raise ValueError(
+            "a natural blockage needs breach.width_m and breach.formation_time_min: the "
+            "breach-parameter regressions are fitted on constructed embankments and do not "
+            "apply to landslide dams (Costa 1985, p.36), so FloodGuard will not fill them in."
+        )
+
     height = scenario.water_head_m
     storage_m3 = (scenario.dam.gross_storage_mcm or 0.0) * 1e6
 
@@ -326,7 +354,7 @@ def resolve(
             else f"{chosen_model.model} (with user overrides where supplied)"
         ),
         width_m=scenario.breach.width_m or chosen_model.width_m,
-        depth_m=scenario.breach.depth_m or scenario.dam.structural_height_m,
+        depth_m=scenario.breach_depth_m,
         side_slope=(
             scenario.breach.side_slope
             if scenario.breach.side_slope is not None
@@ -341,6 +369,17 @@ def resolve(
     )
 
     stats = consensus(predictions)
+
+    if scenario.scenario_type == ScenarioType.PARTIAL_BREACH:
+        fraction = used.depth_m / scenario.dam.structural_height_m
+        used.caveats.insert(
+            0,
+            f"PARTIAL BREACH — ASSUMPTION: the breach cuts {fraction:.0%} of the "
+            f"{scenario.dam.structural_height_m:g} m structural height ({used.depth_m:.1f} m), "
+            f"so the pool below the breach invert stays behind the dam. This fraction was set "
+            f"by the user; no published regression predicts how deep a partial breach cuts, "
+            f"and the result is only as good as that assumption.",
+        )
 
     # Flag a user value that sits outside what any model predicts. Not an
     # error: the user may know something the regressions do not. But it must

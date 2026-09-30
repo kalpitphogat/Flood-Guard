@@ -116,6 +116,7 @@ def build_report(run_dir: Path, out_path: Path | None = None) -> Path:
         ["Run identifier", data.get("run_id", EM_DASH)],
         ["Generated (UTC)", datetime.now(timezone.utc).isoformat(timespec="seconds")],
         ["Engine used", (primary or {}).get("display_name", EM_DASH)],
+        ["Result type", _run_mode_label(data)],
     ]
     if primary and primary.get("substituted"):
         cover_rows.append(["Engine requested", primary.get("requested_engine", EM_DASH)])
@@ -335,6 +336,40 @@ def build_report(run_dir: Path, out_path: Path | None = None) -> Path:
                 )
             )
 
+        life = _life_loss_payloads(run_dir)
+        if life:
+            story.append(Paragraph("5.2 Loss-of-life estimate (Graham 1999)", h2))
+            first = life[0]
+            story.append(Paragraph(first["method"] + ". " + first["citation"], small))
+            story.append(Spacer(1, 2 * mm))
+            story.append(
+                _data_table(
+                    Table, TableStyle, colors, mm,
+                    ["Warning issued (min after breach start)", "Population at risk",
+                     "Suggested", "Range"],
+                    [
+                        [
+                            _fmt(d["assumptions"]["warning_issued_min_after_breach_start"], 0),
+                            _fmt(d.get("population_at_risk"), 0),
+                            _fmt(d.get("estimate"), 0),
+                            f"{_fmt(d['range'][0], 0)} - {_fmt(d['range'][1], 0)}",
+                        ]
+                        for d in life
+                    ],
+                )
+            )
+            story.append(Spacer(1, 2 * mm))
+            story.append(
+                Paragraph(
+                    "Flood-severity understanding assumed "
+                    f"{first['assumptions']['flood_severity_understanding']}; severity by "
+                    "Graham's 10 ft rule. Read the range, not the single value.",
+                    small,
+                )
+            )
+            for c in first.get("caveats", []):
+                story.append(Paragraph("• " + c, caveat))
+
     # ---------------------------------------------------------------- figures
     figures = [
         ("Maximum water depth", run_dir / "max_depth_preview.png"),
@@ -433,6 +468,38 @@ def build_report(run_dir: Path, out_path: Path | None = None) -> Path:
     doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
     log.info("wrote %s", out_path)
     return out_path
+
+
+def _run_mode_label(data: dict[str, Any]) -> str:
+    """How the run was produced: never lets a stored run pass as computed now."""
+    mode = data.get("run_mode") or "full"
+    res = data.get("resolution_m")
+    res_txt = f"{res:.0f} m" if res else EM_DASH
+    if mode == "precomputed":
+        return f"Precomputed on {str(data.get('completed_utc', ''))[:10] or EM_DASH}, {res_txt}"
+    if mode == "quick_estimate":
+        return f"Quick estimate, {res_txt}, 1 h simulated"
+    return f"Full run, {res_txt}"
+
+
+def _life_loss_payloads(run_dir: Path) -> list[dict[str, Any]]:
+    """Cached Graham estimates newer than result.json, sorted by warning time."""
+    result = run_dir / "result.json"
+    completed = (
+        json.loads(result.read_text(encoding="utf-8")).get("completed_utc")
+        if result.exists() else None
+    )
+    out = []
+    for path in run_dir.glob("life_loss_w*_*.json"):
+        try:
+            d = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        # Only estimates computed from THIS run (content check, survives copying).
+        if d.get("computed") and d.get("run_completed_utc") == completed:
+            out.append(d)
+    out.sort(key=lambda d: d["assumptions"]["warning_issued_min_after_breach_start"])
+    return out
 
 
 def _warning_payload(run_dir: Path, data: dict[str, Any]) -> dict[str, Any] | None:

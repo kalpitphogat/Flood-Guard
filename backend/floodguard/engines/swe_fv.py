@@ -142,7 +142,17 @@ class ShallowWaterFV(Engine):
             if dt <= 0:
                 break
 
+            dt = self._step(
+                h, hu, hv, z, manning, active, work, dx, dy, dt, dry_tol,
+                second_order,
+            )
+
             # --- inflow: the breach hydrograph, as a mass source ---
+            # Added AFTER the step, with the dt the step actually took. It used
+            # to be added before, with the CFL dt, while `_step` may shorten dt
+            # to its positivity limit: every shortened step then injected
+            # water for time that never elapsed. On the Tehri 120 m presets
+            # that put 3.87e9 m3 into the domain from a 3.53e9 m3 hydrograph.
             q = spec.inflow_q(t + 0.5 * dt)
             if q > 0.0:
                 # Spread over the breach face, weighted. Adding the total to one
@@ -163,11 +173,6 @@ class ShallowWaterFV(Engine):
                 hv[source_rows, source_cols] += added * speed * dir_col
 
                 volume_in += q * dt
-
-            dt = self._step(
-                h, hu, hv, z, manning, active, work, dx, dy, dt, dry_tol,
-                second_order,
-            )
 
             k.apply_friction(h, hu, hv, manning, active, dt, dry_tol)
 
@@ -226,7 +231,20 @@ class ShallowWaterFV(Engine):
         # nonzero deficit here is expected and is NOT an error. We report it
         # rather than hiding it, and only warn when it exceeds what boundary
         # outflow can plausibly explain.
-        if mass_error > 0.5:
+        # Outflow can only explain a DEFICIT. Ending with more water than was
+        # put in is a numerical gain (seen at 7.9-13.5% on the Tehri 120 m
+        # presets, steep terrain, many positivity-dried cells) and must be
+        # stated, not folded into the boundary-outflow allowance.
+        gain = (final_volume - expected) / max(expected, 1.0)
+        if gain > 0.01:
+            warnings.append(
+                f"NUMERICAL MASS GAIN: the domain ends with {gain * 100:.1f}% MORE water "
+                f"than the breach released. Boundary outflow cannot explain a gain, so this "
+                f"is solver error (likely positivity handling at wet/dry fronts on steep "
+                f"terrain; {cells_dried:,} cell-updates were dried). Depths and extent are "
+                f"biased high by up to about this fraction."
+            )
+        elif mass_error > 0.5:
             warnings.append(
                 f"Mass balance closes to only {mass_error * 100:.1f}%. Some of this is "
                 f"legitimate outflow through the open downstream boundary, but a deficit "
@@ -302,6 +320,8 @@ class ShallowWaterFV(Engine):
                 "volume_remaining_m3": final_volume,
                 "mass_error": float(mass_error),
                 "cells_dried_by_positivity": cells_dried,
+                "volume_created_by_positivity_m3": float(work.clipped[0] * cell_area),
+                "volume_removed_by_positivity_m3": float(work.clipped[1] * cell_area),
                 "cell_updates_speed_capped": cells_capped,
                 "clipped_fraction": float(clipped_fraction),
                 "max_speed_cap_ms": 120.0,
@@ -355,6 +375,7 @@ class ShallowWaterFV(Engine):
             w.s_eta_y, w.s_u_y, w.s_v_y, w.s_z_y,
             w.dh, w.dhu, w.dhv,
             w.fy0, w.fy1, w.fy2, w.fy3,
+            w.fx0, w.fx1, w.fx2, w.fyF1,
             active, dx, dy, dry_tol, second_order,
         )
         # Faces with no active neighbour carry no flux from the sweep above, so
@@ -369,10 +390,18 @@ class ShallowWaterFV(Engine):
         )
 
     @staticmethod
-    def _apply(h, hu, hv, work, active, dt, dry_tol, max_speed=120.0):
+    def _limit(h, work, active, dt, dx, dy):
+        """Rescale outgoing fluxes so no cell drains below zero this step."""
+        k.outflow_limiter(
+            h, work.fx0, work.fx1, work.fx2, work.fy0, work.fyF1, work.fy2,
+            work.phi, work.dh, work.dhu, work.dhv, active, dt, dx, dy,
+        )
+
+    @staticmethod
+    def _apply(h, hu, hv, work, active, dt, dry_tol, max_speed=120.0, clip_negative=True):
         k.apply_update(
             h, hu, hv, work.dh, work.dhu, work.dhv, active, dt, dry_tol,
-            max_speed, work.counters,
+            max_speed, work.counters, work.clipped, clip_negative,
         )
 
     @staticmethod
@@ -412,6 +441,7 @@ class ShallowWaterFV(Engine):
             dt_max,
             positivity_safety * k.positivity_dt(h, work.dh, active, threshold),
         )
+        ShallowWaterFV._limit(h, work, active, dt, dx, dy)
         if not second_order:
             ShallowWaterFV._apply(h, hu, hv, work, active, dt, dry_tol, max_speed)
             return dt
@@ -426,9 +456,13 @@ class ShallowWaterFV(Engine):
             h, hu, hv, z, manning, active, work, dx, dy, dry_tol, second_order,
             open_edges,
         )
-        ShallowWaterFV._apply(h, hu, hv, work, active, dt, dry_tol, max_speed)
+        ShallowWaterFV._limit(h, work, active, dt, dx, dy)
+        # Unclipped: this intermediate is averaged, never used for a flux.
+        ShallowWaterFV._apply(
+            h, hu, hv, work, active, dt, dry_tol, max_speed, clip_negative=False,
+        )
 
-        k.rk2_average(h, hu, hv, work.h0, work.hu0, work.hv0, active, dry_tol)
+        k.rk2_average(h, hu, hv, work.h0, work.hu0, work.hv0, active, dry_tol, work.clipped)
         return dt
 
 
@@ -452,9 +486,12 @@ class Work:
         # Temporary y-face fluxes, so the y sweep can run row-major. See
         # _swe_kernels.flux_sweep for why that matters.
         "fy0", "fy1", "fy2", "fy3",
+        # All face fluxes and the per-cell drain factor, for the outflow limiter.
+        "fx0", "fx1", "fx2", "fyF1", "phi",
         # Persistent RK2 stage buffers, so the average allocates nothing.
         "h0", "hu0", "hv0",
         "counters",
+        "clipped",
     )
 
     def __init__(self, z, active):
@@ -467,6 +504,7 @@ class Work:
             setattr(self, name, _np.zeros(shape, dtype=_np.float64))
         # [cells dried by positivity, cells whose speed was capped]
         self.counters = _np.zeros(2, dtype=_np.int64)
+        self.clipped = _np.zeros(2, dtype=_np.float64)
         k.compute_slopes(z, self.s_z_x_base, self.s_z_y_base, active)
 
 

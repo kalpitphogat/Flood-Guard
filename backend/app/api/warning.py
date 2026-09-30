@@ -65,13 +65,45 @@ def warning(run_id: str) -> dict[str, Any]:
             status_code=404,
             detail="this run has no named towns, so there is nobody to warn by name",
         )
-    return payload
+    return {**payload, "officials_only": {"life_loss": _life_loss_summary(run_id)}}
+
+
+def _life_loss_summary(run_id: str) -> dict[str, Any] | None:
+    """The cached Graham (1999) estimate, for officials only.
+
+    Casualty estimates are planning information. They are kept out of the
+    public bulletin text, the SMS and the CAP alert on purpose.
+    """
+    from app.api.results import life_loss_cache
+
+    d = life_loss_cache(run_dir(run_id) / "life_loss_w0_vague.json", load_result(run_id))
+    if d is None or not d.get("computed"):
+        return None
+    return {
+        "method": d["method"],
+        "assumption": "warning issued when the breach starts; flood-severity understanding vague",
+        "population_at_risk": d["population_at_risk"],
+        "range": d["range"],
+        "suggested": d["estimate"],
+        "caveat": d["caveats"][0],
+    }
 
 
 @router.get("/{run_id}/warning/bulletin.txt")
 def bulletin_text(run_id: str, lang: str = Query("en", pattern="^(en|hi)$")) -> Response:
     payload = warning(run_id)
     text = payload["text_hi"] if lang == "hi" else payload["text_en"]
+    life = payload["officials_only"]["life_loss"]
+    if lang == "en" and life:
+        lo, hi = life["range"]
+        text += (
+            "\n\n" + "-" * 64 + "\n"
+            "FOR OFFICIALS ONLY - NOT FOR PUBLIC BROADCAST\n"
+            f"Loss-of-life planning estimate ({life['method']}): {lo:,}-{hi:,} people "
+            f"(suggested {life['suggested']:,}) of {life['population_at_risk']:,} modelled "
+            f"residents in the flooded area, assuming the {life['assumption']}.\n"
+            f"{life['caveat']}\n"
+        )
     return Response(
         text,
         media_type="text/plain; charset=utf-8",

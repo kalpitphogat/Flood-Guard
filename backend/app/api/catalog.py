@@ -89,10 +89,9 @@ def reservoir_curve(dam_id: str) -> ReservoirCurve:
     exists to avoid.
     """
     settings = get_settings()
-    for scenario_dir in sorted(settings.processed_dir.glob("*")):
-        pre_path = scenario_dir / "preprocess.json"
-        if not pre_path.exists():
-            continue
+    from floodguard import processed
+
+    for pre_path in processed.all_preprocess_json(settings.floodguard_data_dir):
         pre = json.loads(pre_path.read_text(encoding="utf-8"))
         if pre.get("scenario_id", "").split("_")[0] not in dam_id and dam_id not in pre.get(
             "scenario_id", ""

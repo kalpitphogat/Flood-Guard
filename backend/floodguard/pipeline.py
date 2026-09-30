@@ -31,7 +31,7 @@ from floodguard.engines.base import EngineInput, ResultBundle
 from floodguard.engines.swe_fv import ShallowWaterFV
 from floodguard.postprocess import exports, hazard
 from floodguard.preprocess.pipeline import PreprocessResult, run_preprocess
-from floodguard.scenario import Scenario
+from floodguard.scenario import Scenario, ScenarioType
 
 log = logging.getLogger(__name__)
 
@@ -103,6 +103,11 @@ class SimulationResult:
     impact: dict[str, Any] | None = None
     runtime_s: float = 0.0
     warnings: list[str] = field(default_factory=list)
+    #: How this run was produced: "full" (default), "precomputed" (library
+    #: preset) or "quick_estimate", plus library keys. Written to result.json.
+    run_meta: dict[str, Any] = field(default_factory=lambda: {"run_mode": "full"})
+    #: Costa (1985) landslide-dam peak cross-check, for natural blockages only.
+    natural_dam_check: dict[str, Any] | None = None
 
     @property
     def primary(self) -> EngineRun | None:
@@ -184,10 +189,13 @@ class SimulationResult:
             "resolution_m": float(self.preprocess.cell_size_m),
             "crs": str(self.preprocess.crs),
             "completed_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "run_mode": self.run_meta.get("run_mode", "full"),
+            "run_meta": self.run_meta,
             "breach": {
                 "used": self.breach_used.to_dict(),
                 "predictions": [p.to_dict() for p in self.breach_predictions],
                 "spread": self.breach_spread,
+                "natural_dam_check": self.natural_dam_check,
             },
             "hydrograph": {
                 "peak_discharge_m3s": self.hydrograph.peak_discharge_m3s,
@@ -424,7 +432,8 @@ def _build_engine_input(
 
     # The release point is the snapped dam cell — which sits just downstream of
     # the embankment, where the breach outflow actually enters the valley.
-    src = pre.dam_snapped_rc
+    # A natural blockage burned into the DEM releases just below the barrier.
+    src = pre.release_rc or pre.dam_snapped_rc
     if not active_full[src]:
         # Nudge onto the nearest active cell along the traced path.
         for rc in pre.path_rc[:50]:
@@ -446,6 +455,11 @@ def _build_engine_input(
     )
 
     face = breach_face_cells(active, src_cropped, breach_width_m, pre.cell_size_m)
+    if pre.barrier is not None:
+        # Never inject on the burned wall: water placed on its crest could
+        # spill back upstream into the (dry) lake bed.
+        wall = pre.barrier.mask[rs, cs]
+        face = [f for f in face if not wall[f[0], f[1]]] or [(src_cropped[0], src_cropped[1], 1.0)]
     direction = downstream_direction(pre.path_rc, rs.start, cs.start, src_cropped)
 
     spec = EngineInput(
@@ -527,9 +541,11 @@ def ensure_inputs(
     Both now resolve the same way: (re)acquire. Tiles are content-addressed in
     the cache, so a re-mosaic at a new resolution downloads nothing.
     """
+    from floodguard import processed
+
     notes: list[str] = []
-    dem_path = data_dir / "processed" / scenario.id / "dem_utm.tif"
     wanted = float(scenario.domain.resolution_m)
+    dem_path = processed.inputs_dir(data_dir, scenario.id, wanted) / processed.DEM_NAME
     reason = ""
     if not dem_path.exists():
         reason = "no DEM mosaic exists for this scenario yet"
@@ -604,8 +620,18 @@ def simulate(
     reuse_preprocess: bool = True,
     export: bool = True,
     auto_acquire: bool = True,
+    run_meta: dict[str, Any] | None = None,
 ) -> SimulationResult:
-    """Run the full pipeline for one scenario."""
+    """Run the full pipeline for one scenario.
+
+    `run_meta` labels how the run was produced (see SimulationResult.run_meta);
+    it lands in result.json and in the provenance of every export.
+    """
+    run_meta = {
+        "run_mode": "full",
+        **(run_meta or {}),
+        "duration_hours": float(scenario.solver.duration_hours),
+    }
     started = time.perf_counter()
     run_id = run_id or f"{scenario.id}_{int(time.time())}"
     out_dir = data_dir / "runs" / run_id
@@ -629,6 +655,8 @@ def simulate(
     # --- Phase 3 ---
     progress(fraction=0.15, phase="breach", message="solving the breach hydrograph")
     used, predictions, spread = breach_params.resolve(scenario)
+    if scenario.scenario_type == ScenarioType.PARTIAL_BREACH:
+        warnings.append(used.caveats[0])
     crest = scenario.dam.crest_elevation_m or scenario.initial_level_m
     if scenario.inflow_hydrograph_csv:
         hydrograph = load_user_hydrograph(scenario.inflow_hydrograph_csv)
@@ -645,11 +673,17 @@ def simulate(
             inflow_m3s=scenario.reservoir.inflow_m3s,
         )
     warnings.extend(hydrograph.warnings)
+    natural_check = _natural_dam_check(scenario, pre, hydrograph)
+    if natural_check:
+        warnings.append(natural_check["summary"])
     if not scenario.inflow_hydrograph_csv:
         _write_breach_ensemble(
             out_dir, scenario, pre, predictions, used, crest,
         )
-    if spread["width_m"]["spread_ratio"] > 2.0:
+    # Only meaningful when at least one model applies: for a natural blockage (or a
+    # dam with no storage figure) the regressions are all inapplicable, and their
+    # "spread" is an artefact, once reported as a factor of 151,100,000.
+    if spread["width_m"]["spread_ratio"] > 2.0 and any(p.applicable for p in predictions):
         warnings.append(
             f"The breach-parameter models disagree by a factor of "
             f"{spread['width_m']['spread_ratio']:.1f} on width. Breach geometry, not the "
@@ -666,6 +700,8 @@ def simulate(
         breach_predictions=predictions,
         breach_spread=spread,
         warnings=warnings,
+        run_meta=run_meta,
+        natural_dam_check=natural_check,
     )
 
     # --- Phase 4 ---
@@ -751,6 +787,7 @@ def simulate(
         **bundle.provenance,
         "run_id": run_id,
         "scenario": scenario.id,
+        **run_meta,
         "engine_honesty_note": primary.honesty_note(),
         "reservoir": pre.reservoir.to_dict()["bathymetry"],
         "breach": used.to_dict(),
@@ -796,6 +833,31 @@ def simulate(
     return result
 
 
+def _natural_dam_check(scenario: Scenario, pre, hydrograph) -> dict[str, Any] | None:
+    """For a natural blockage: compare the routed peak with Costa (1985)."""
+    from floodguard.breach.natural_dam import costa_1985_landslide_peak
+    from floodguard.scenario import DamType
+
+    if scenario.dam.dam_type != DamType.NATURAL_BLOCKAGE or pre.reservoir is None:
+        return None
+    volume_mcm = pre.reservoir.curve.volume_at(scenario.initial_level_m) / 1e6
+    if volume_mcm <= 0:
+        return None
+    costa = costa_1985_landslide_peak(scenario.dam.structural_height_m, volume_mcm).to_dict()
+    routed = float(hydrograph.peak_discharge_m3s)
+    ratio = routed / costa["peak_m3s"] if costa["peak_m3s"] > 0 else None
+    se = costa["by_form"]["dam_factor"]["standard_error_pct"]
+    costa["routed_peak_m3s"] = routed
+    costa["ratio_routed_to_costa"] = ratio
+    costa["summary"] = (
+        f"Natural blockage: the routed breach peak is {routed:,.0f} m3/s; Costa (1985)'s "
+        f"landslide-dam regression gives {costa['peak_m3s']:,.0f} m3/s for a {costa['height_m']:.0f} m "
+        f"barrier holding {volume_mcm:,.1f} MCM (standard error {se:.0f}%, {costa['fitted_cases']} "
+        f"cases). Ratio {ratio:.2f}. The breach width and formation time were user-supplied."
+    )
+    return costa
+
+
 def _run_impact(
     scenario: Scenario,
     bundle: ResultBundle,
@@ -829,7 +891,12 @@ def _run_impact(
         ).assumption_note()
 
     landcover = None
-    lc_path = data_dir / "processed" / scenario.id / "landcover_utm.tif"
+    from floodguard import processed
+
+    lc_path = (
+        processed.inputs_dir(data_dir, scenario.id, scenario.domain.resolution_m)
+        / processed.LANDCOVER_NAME
+    )
     window = bundle.provenance.get("compute_window") or {}
     if lc_path.exists() and window.get("rows"):
         import rasterio
