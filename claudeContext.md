@@ -39,6 +39,10 @@ on 3c code; backend 321 passed / 1 failed (SPH, pre-existing) / 3 skipped, front
 build clean, citations OK. Still open: Earth Engine (paused — ask), 12 h Tehri, overtopping,
 SPH regression. The Tehri 60 m preprocess log could not be read (auto-mode classifier denial);
 the r60 preprocess.json exists and is used by the API.
+~21:30 IST: demo polish done — dark theme (default) + toggle, Esri dark basemap, chart
+axis fixes, "nan" settlement fix, cross-section reset on dam switch, Monitoring marked
+experimental (HANDOFF R3.11). Dashboard :8000 restarted with it. Backend 326 passed /
+3 skipped, frontend 34 passed. Server copy lacks R3.10-KML + R3.11 backend changes.
 The table below is the 16:00 state, kept for history.
 
 ### Running right now (check before doing anything)

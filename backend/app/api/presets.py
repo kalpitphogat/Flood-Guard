@@ -12,6 +12,16 @@ from typing import Any
 from fastapi import APIRouter
 
 from app.core.config import get_settings
+
+
+#: Words kept upper case when a catalogue name is title-cased for the UI.
+NAME_ACRONYMS = {"HPP", "HEP", "HE", "NHPC", "NTPC", "SJVN", "THDC", "MIP", "LIS"}
+
+
+def display_name(name: str) -> str:
+    """Catalogue names are upper case ("TEHRI HPP"); title-case them for the UI,
+    keeping known acronyms ("Tehri HPP", not "Tehri Hpp")."""
+    return " ".join(w if w.upper() in NAME_ACRONYMS else w.capitalize() for w in name.split())
 from app.schemas.models import (
     PresetCatalog,
     PresetDam,
@@ -52,7 +62,7 @@ def list_presets() -> PresetCatalog:
         dams.append(
             PresetDam(
                 scenario_id=scenario.id,
-                name=scenario.dam.name.title(),
+                name=display_name(scenario.dam.name),
                 duration_hours=scenario.solver.duration_hours,
                 levels=[
                     PresetLevel(level=k, label=lib.LEVEL_LABELS[k], level_m=v)

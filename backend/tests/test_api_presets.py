@@ -226,3 +226,11 @@ def test_a_60_m_preset_is_served_with_its_resolution(env):
     _precompute(data_dir, key60)
     r = client.post("/api/simulate", json={"preset_key": key60}).json()
     assert r["run_id"] == f"lib_{key60}" and r["mode_label"].endswith("60 m")
+
+
+def test_dam_display_names_keep_acronyms():
+    from app.api.presets import display_name
+
+    assert display_name("TEHRI HPP") == "Tehri HPP"
+    assert display_name("HIRAKUD") == "Hirakud"
+    assert display_name("NTPC DAM") == "NTPC Dam"

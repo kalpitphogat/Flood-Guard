@@ -64,9 +64,10 @@ Round 3 (details: `docs/HANDOFF.md` R3.1-R3.8):
   `scripts/check_citations.py`.
 - 60 m presets also done (both dams × FRL/mid/MDDL, keys `__r60`, with 60 m preprocess + life-loss);
   demo pack `data/library/floodguard_demo_presets.fgpack` = all 12 presets (HANDOFF R3.9).
-- Last measured (2026-09-30 ~20:30 IST): backend **321 passed, 1 failed, 3 skipped** (pre-existing SPH
-  `test_depth_is_the_kernel_sum_and_recovers_a_uniform_layer`; skips = EE-unconfigured tests);
-  frontend **32 passed**, build clean; `validate` **12/13** (FV 8/8, SPH 4/5 — SPH Ritter h(dam) 10.03% > 5%).
+- UI: dark theme by default with a header toggle (`src/theme.ts`, theme layer in `src/index.css`) — HANDOFF R3.11.
+- Last measured (2026-09-30 ~21:30 IST): backend **326 passed, 3 skipped** (the SPH
+  `test_depth_is_the_kernel_sum_and_recovers_a_uniform_layer` passed this once after failing every
+  earlier run — flaky, not fixed; skips = EE-unconfigured tests); frontend **34 passed**, build clean; `validate` **12/13** (FV 8/8, SPH 4/5 — SPH Ritter h(dam) 10.03% > 5%).
 
 ## Remaining work, in priority order
 

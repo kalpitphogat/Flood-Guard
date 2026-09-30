@@ -271,6 +271,32 @@ only); `check_citations.py` 157 references: OK 149, OUTPUT_NAME 7, OUTSIDE_REPO 
 no failures. `floodguard validate` not re-run. Dashboard on :8000 restarted on the
 round-3c code (logs `data/library/server_3c.log`, `server_3c.err.log`).
 
+## R3.11 Demo polish — dark theme and UI fixes (2026-09-30 evening)
+
+| Area | What | Files |
+|---|---|---|
+| **Dark theme** (default) + light/dark toggle in the header (replaces the dead Notifications/Account buttons); choice stored per browser, applied before first paint | One theme layer: `darkMode: 'class'`, and `index.css` re-maps the colour utilities the app uses under `.dark` (light mode untouched). Recharts axes/grid/series and MapLibre controls lifted in the same file. Flood-depth legend colours are data colours and are NOT re-mapped | `src/theme.ts`, `index.html`, `tailwind.config.js`, `src/index.css`, `components/Layout.tsx` |
+| **Dark basemap** | Esri World Dark Gray Canvas (base + labels, keyless, same Esri server as the satellite layer). CARTO dark was tried first: its tiles now carry an "API KEY REQUIRED" watermark | `components/MapView.tsx` (`applyBasemapTheme`), `SwipeMap.tsx` |
+| **Hydrograph chart** had a categorical time axis: adaptive routing steps were drawn evenly spaced (time not to scale, repeated tick labels). Now a numeric axis; title "Flood Arrival Time" → "Breach Outflow Hydrograph" (it plots breach outflow + reservoir level) | `components/Charts.tsx` |
+| Town-gauge chart numeric time axis; line draw-in animations off; legends moved above the plot (overlapped the axis title); cross-section elevation ticks rounded (were long decimals) | `Charts.tsx`, `GaugesPanel.tsx` |
+| **Cross-section kept the previous dam's town** after switching presets (Hirakud → Tehri asked for "Sambalpur") — resets to the new scenario's first town | `pages/Simulation.tsx` |
+| **Settlement "nan"** in the evacuation list (every preset): an unnamed OSM place is NaN, which is truthy, so it passed `if not name` and became "nan"; unnamed facilities came through as `null`. Fixed at the source (`osm_name`) and, for stored runs, when served (`/impact`) and in the PDF (`named_evacuation_rows`, `labelled_facilities`) — no preset re-run needed | `floodguard/impact/exposure.py`, `app/api/results.py`, `floodguard/report.py`, `tests/test_osm_names.py` |
+| Chainage "0.0 km" fallback → "—" when unknown | `Charts.tsx`, `Charts.test.tsx` |
+| Dam names: `.title()` gave "Tehri Hpp" → "Tehri HPP" (explicit acronym list) | `app/api/presets.py::display_name`, `tests/test_api_presets.py` |
+| Monitoring page: "Experimental — not validated" badge + banner; Method list corrected to what `gee.py` does (Otsu near the historical water edge on the post image; per-scene layover/shadow masks, Vollrath et al. 2020) | `pages/RealtimeMonitoring.tsx` |
+| Sensitivity base-case marker `bg-slate-800` → `bg-rose-600` (invisible on dark) | `components/SensitivityPanel.tsx` |
+
+Checked by a headless-Chrome click-through over the DevTools protocol (Claude in
+Chrome was not connected), 1366×768, both themes: choose Tehri → FRL → "Show
+precomputed result", Comparison View, 3D View, Play, theme toggle; 0 console errors
+or warnings, no "nan" rows. Not checked by that walk: PDF/KMZ downloads, the
+quick-estimate path, Hindi bulletin rendering.
+
+Tests after R3.11: backend **326 passed, 3 skipped** (in this run the SPH
+`test_depth_is_the_kernel_sum_and_recovers_a_uniform_layer` passed; it failed in
+every earlier run and no SPH file was touched — treat it as flaky, not fixed);
+frontend **34 passed** (14 files), `tsc` clean, build clean.
+
 ## R3.8 Commands
 
 ```bash

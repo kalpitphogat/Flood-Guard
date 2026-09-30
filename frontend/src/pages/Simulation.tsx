@@ -115,8 +115,13 @@ export default function Simulation() {
     }
   }, [demoMode, runId, runs.data])
 
+  // Default the cross-section to the scenario's first town, and reset it when a
+  // different dam is loaded (a Hirakud town is not a section of the Tehri run).
   useEffect(() => {
-    if (!sectionLocation && scenario?.towns.length) setSectionLocation(scenario.towns[0])
+    if (!scenario?.towns.length) return
+    if (!sectionLocation || !scenario.towns.includes(sectionLocation)) {
+      setSectionLocation(scenario.towns[0])
+    }
   }, [scenario, sectionLocation])
 
   const status = (live?.status as string) ?? job.data?.status ?? null

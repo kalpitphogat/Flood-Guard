@@ -206,7 +206,7 @@ export function CrossSectionChart({
                 allowDecimals={false}
                 tickFormatter={(v) => `${Math.round(Number(v))}`}
                 width={64}
-                label={{ value: 'elevation (m MSL)', angle: -90, position: 'insideLeft', ...AXIS }}
+                label={{ value: 'm MSL', angle: -90, position: 'insideLeft', ...AXIS }}
               />
               <Tooltip
                 contentStyle={{ fontSize: 11 }}
